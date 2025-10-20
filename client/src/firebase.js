@@ -2,10 +2,11 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions"; // Required for secure admin features
 
-// Your web app's Firebase configuration
+// IMPORTANT: Replace the placeholder object with the actual keys copied from your Firebase Console
 const firebaseConfig = {
-  apiKey: "AIzaSyBLkvrmzu--1fB7UhPgUpdzI6OhmNvs_eE",
+  apiKey: "AIzaSyBLkvrmzu--1fB7UhPgUpdzI6OhmNvs_eE", // YOUR KEY HERE
   authDomain: "elevateplus-app.firebaseapp.com",
   projectId: "elevateplus-app",
   storageBucket: "elevateplus-app.firebasestorage.app",
@@ -17,6 +18,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Export the services you'll need
+// Export the services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app); // Functions service for advanced features (if needed later)

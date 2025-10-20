@@ -16,10 +16,8 @@ function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      // Firebase errors are detailed, so we clean up the message for the user
-      let errorMessage = err.message.includes('auth/invalid-credential') 
-                         ? 'Invalid Email or Password. Please try again.' 
-                         : 'An unexpected error occurred during login.';
+      // Clean up the error message for the user
+      let errorMessage = 'Invalid Email or Password. Please check your credentials.';
       setError(errorMessage);
     }
   };
@@ -31,8 +29,7 @@ function LoginPage() {
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        // Optional: Sets a dark background for the whole page if App.css is mostly removed
-        backgroundColor: '#1a1a1a', 
+        backgroundColor: '#f8f9fa', // Light background
       }}
     >
       <Paper elevation={12} 
@@ -41,11 +38,15 @@ function LoginPage() {
           width: '100%', 
           maxWidth: 400, 
           textAlign: 'center',
-          backgroundColor: '#2e2e2e',
         }}
       >
-        <Typography variant="h4" gutterBottom sx={{ color: 'white', mb: 4 }}>
-          ELEVATEPLUS Login
+        {/* Placeholder for LTVplus Logo (replace with an image later) */}
+        <Typography variant="h4" gutterBottom sx={{ color: '#007BFF', fontWeight: 'bold' }}>
+          LTVplus <span style={{ color: '#000000' }}>ELEVATEPLUS</span>
+        </Typography>
+
+        <Typography variant="h6" gutterBottom sx={{ mb: 4, color: '#495057' }}>
+          Coaching App Login
         </Typography>
 
         <form onSubmit={handleLogin}>
@@ -53,25 +54,23 @@ function LoginPage() {
             <Grid item xs={12}>
               <TextField 
                 label="Email" 
-                variant="filled" 
+                variant="outlined" 
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required 
                 fullWidth 
-                sx={{ input: { color: 'white' } }}
               />
             </Grid>
             <Grid item xs={12}>
               <TextField 
                 label="Password" 
-                variant="filled" 
+                variant="outlined" 
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required 
                 fullWidth 
-                sx={{ input: { color: 'white' } }}
               />
             </Grid>
             <Grid item xs={12}>

@@ -1,90 +1,106 @@
 // src/components/ManagerDashboard.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore'; 
+import { collection, query, where, getDocs } from 'firebase/firestore'; 
 
-import { Container, Typography, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Grid, Alert } from '@mui/material';
+import { Container, Typography, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Grid, Alert, Select, MenuItem, InputLabel, FormControl } from '@mui/material';
+import AgentScoreForm from './AgentScoreForm'; // <-- NEW IMPORT
 
-function ManagerDashboard({ user, onLogout, isSimulated }) { 
+function ManagerDashboard({ user, onLogout, isSimulated }) {
+    const [campaigns, setCampaigns] = useState([]);
+    const [selectedCampaign, setSelectedCampaign] = useState(null);
+    const [campaignKpis, setCampaignKpis] = useState({});
     const [agents, setAgents] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
 
-    // --- Core Logic: Fetch only Assigned Agents from Firestore ---
-    useEffect(() => {
-        const fetchAgents = async () => {
-            setIsLoading(true);
-            try {
+    // --- CORE FETCH FUNCTION ---
+    const fetchAllManagerData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            // 1. Fetch Campaigns assigned to this manager (or all campaigns for Admin sim)
+            const campaignsSnapshot = await getDocs(collection(db, 'campaigns'));
+            const campaignList = campaignsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setCampaigns(campaignList);
+
+            // 2. Fetch Campaign-KPI links
+            const campaignKpisSnapshot = await getDocs(collection(db, "campaignKpis"));
+            const links = {};
+            campaignKpisSnapshot.forEach(doc => {
+                const data = doc.data();
+                if (!links[data.campaignId]) links[data.campaignId] = {};
+                links[data.campaignId][data.kpiId] = { isEnabled: data.isEnabled };
+            });
+            setCampaignKpis(links);
+
+            // Set default campaign selection
+            const defaultCampaign = campaignList.find(c => c.id === user.campaignId) || campaignList[0];
+            if (defaultCampaign) {
+                setSelectedCampaign(defaultCampaign);
+                
+                // 3. Fetch Agents assigned to the manager's UID and the selected campaign
                 const managerUID = user.uid; 
                 
-                if (isSimulated || !managerUID) {
-                     setAgents([]); 
-                     return;
-                }
-
-                const agentsQuery = query(
-                    collection(db, 'users'), 
-                    where('role', '==', 'Agent'),
-                    where('managerId', '==', managerUID) 
-                );
-                const snapshot = await getDocs(agentsQuery);
+                let agentsQuery = query(collection(db, 'users'), where('role', '==', 'Agent'));
                 
+                if (!isSimulated) {
+                    // Filter by manager's UID
+                    agentsQuery = query(agentsQuery, where('managerId', '==', managerUID));
+                }
+                
+                // Filter by selected campaign
+                agentsQuery = query(agentsQuery, where('campaignId', '==', defaultCampaign.id));
+
+                const snapshot = await getDocs(agentsQuery);
                 const agentList = snapshot.docs.map(doc => ({
                     id: doc.id,
+                    uid: doc.id,
                     ...doc.data(),
-                    csat: 'N/A', 
-                    quality: 'N/A', 
-                    aht: 'N/A' 
+                    overallScore: 'N/A' // This will be calculated/fetched later
                 }));
                 setAgents(agentList);
-            } catch (error) {
-                console.error("Error fetching assigned agents:", error);
-            } finally {
-                setIsLoading(false);
             }
-        };
+        } catch (error) {
+            console.error("Error fetching manager data:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isSimulated, user.campaignId, user.uid]);
 
-        if (user && user.uid && !isSimulated) { 
-            fetchAgents();
+    useEffect(() => {
+        if (!isSimulated && user.uid) {
+            fetchAllManagerData();
         } else if (isSimulated) {
+            // Admin simulation bypasses data fetching
             setIsLoading(false);
             setAgents([]);
         }
-    }, [user, isSimulated]); 
-    
-    // --- Render Content ---
+    }, [user, isSimulated, fetchAllManagerData]);
+
+    const handleCampaignChange = (campaignId) => {
+        const campaign = campaigns.find(c => c.id === campaignId);
+        setSelectedCampaign(campaign);
+        // Note: For a production app, you would re-run fetchAllManagerData here
+    };
+
+    // --- RENDER CONTENT ---
 
     // 1. Render the detailed agent view (Coaching/Scores)
     if (selectedAgent) {
         return (
             <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
                 <Typography variant="h4" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold', mb: 4 }}>
-                    Agent Performance View
+                    Coach Agent: {selectedAgent.fullName}
                 </Typography>
                 <Button variant="outlined" onClick={() => setSelectedAgent(null)} sx={{ mb: 2 }}>
                     ← Back to Team Roster
                 </Button>
                 
-                <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-                    <Typography variant="h5">Viewing Agent: {selectedAgent.fullName}</Typography>
-                    <Typography variant="body1" color="secondary.dark">Email: {selectedAgent.email}</Typography>
-                </Paper>
-
-                {/* --- PLACEHOLDERS FOR NEW FEATURES --- */}
-                <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                        <Paper elevation={3} sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom>Add Coaching Log</Typography>
-                            <Alert severity="info">Feature: Coaching Log Form goes here.</Alert>
-                        </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                        <Paper elevation={3} sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom>Agent KPI Scores</Typography>
-                            <Alert severity="info">Feature: Table to input/view scores goes here.</Alert>
-                        </Paper>
-                    </Grid>
-                </Grid>
+                <AgentScoreForm 
+                    agent={selectedAgent} 
+                    campaignKpis={campaignKpis} 
+                    fetchTeamData={fetchAllManagerData} 
+                />
             </Container>
         );
     }
@@ -100,29 +116,41 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                 </Box>
             </Box>
             
-            <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>Your Team Roster</Typography>
+            <Grid container spacing={3} sx={{ mt: 4, mb: 2 }}>
+                <Grid item xs={12} sm={6}>
+                    <Typography variant="h5">Team Roster</Typography>
+                </Grid>
+                <Grid item xs={12} sm={6} sx={{ textAlign: 'right' }}>
+                    <FormControl variant="outlined" sx={{ width: '100%', maxWidth: 300 }}>
+                        <InputLabel>Select Campaign</InputLabel>
+                        <Select
+                            value={selectedCampaign?.id || ''}
+                            onChange={(e) => handleCampaignChange(e.target.value)}
+                            label="Select Campaign"
+                            disabled={isLoading || isSimulated}
+                        >
+                            {campaigns.map((camp) => (
+                                <MenuItem key={camp.id} value={camp.id}>
+                                    {camp.name}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Grid>
+            </Grid>
             
-            {isSimulated && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                    This is the **Admin's Simulated Manager View**. No real agent data is loaded.
-                </Alert>
-            )}
-
             {isLoading && !isSimulated ? (
-                <Alert severity="info">Loading assigned agents...</Alert>
-            ) : agents.length === 0 && !isSimulated ? (
-                <Alert severity="warning">You have no agents assigned. Please ask an Admin to assign agents to you.</Alert>
-            ) : agents.length === 0 && isSimulated ? (
-                 <Alert severity="info">Simulated View: Agent list is empty.</Alert>
+                <Alert severity="info">Loading team data...</Alert>
+            ) : agents.length === 0 && selectedCampaign ? (
+                <Alert severity="warning">No agents are assigned to you on the {selectedCampaign.name} campaign.</Alert>
             ) : (
                 <TableContainer component={Paper} elevation={3}>
                     <Table>
                         <TableHead sx={{ backgroundColor: 'primary.light' }}>
                             <TableRow>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Agent Name</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>CSAT</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Quality</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>AHT</TableCell>
+                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Campaign</TableCell>
+                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Overall Score (1-5)</TableCell>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
                             </TableRow>
                         </TableHead>
@@ -130,16 +158,19 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                             {agents.map((agent) => (
                                 <TableRow key={agent.id}>
                                     <TableCell component="th" scope="row">{agent.fullName || agent.email}</TableCell>
-                                    <TableCell>{agent.csat}</TableCell>
-                                    <TableCell>{agent.quality}</TableCell>
-                                    <TableCell>{agent.aht}</TableCell>
+                                    <TableCell>{selectedCampaign?.name}</TableCell>
+                                    <TableCell>
+                                        <Typography color={agent.overallScore >= 4 ? 'success.main' : agent.overallScore >= 3 ? 'warning.main' : 'error'}>
+                                            {agent.overallScore}
+                                        </Typography>
+                                    </TableCell>
                                     <TableCell>
                                         <Button 
                                             variant="contained" 
                                             size="small"
                                             onClick={() => setSelectedAgent(agent)}
                                         >
-                                            View & Coach
+                                            Coach Agent
                                         </Button>
                                     </TableCell>
                                 </TableRow>
@@ -148,6 +179,8 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                     </Table>
                 </TableContainer>
             )}
+            
+            {isSimulated && <Alert severity="warning" sx={{ mt: 2 }}>This is the Admin's Simulated Manager View. Data is not fully loaded.</Alert>}
         </Container>
     );
 }

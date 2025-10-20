@@ -13,71 +13,64 @@ app.use(express.json());
 
 // Function to authenticate with Google Sheets
 async function getGoogleSheetsClient() {
+  console.log('--- 1. Attempting to get Google Sheets client. ---');
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SHEETS_CLIENT_EMAIL,
       private_key: process.env.GOOGLE_SHEETS_PRIVATE_KEY.replace(/\\n/g, '\n'),
     },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    scopes: ['https.googleapis.com/auth/spreadsheets'],
   });
+  console.log('--- 2. GoogleAuth object created. ---');
   const sheets = google.sheets({ version: 'v4', auth });
+  console.log('--- 3. Google Sheets client successfully created. ---');
   return sheets;
 }
 
-// === API ENDPOINTS ===
-
-// Register a new user
-app.post('/api/register', async (req, res) => {
-    // ... (The code for this endpoint is correct and remains the same)
-    const { username, fullName, role, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required.' });
-    }
-    try {
-      const sheets = await getGoogleSheetsClient();
-      const salt = await bcrypt.genSalt(10);
-      const password_hash = await bcrypt.hash(password, salt);
-      const newUserId = `user_${Date.now()}`;
-      const newUserRow = [newUserId, username, fullName, role, password_hash];
-      
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'Users!A:E',
-        valueInputOption: 'USER_ENTERED',
-        resource: { values: [newUserRow] },
-      });
-      res.status(201).json({ message: 'User registered successfully!' });
-    } catch (error) { res.status(500).send('Server Error'); }
-});
-  
 // Log in a user
 app.post('/api/login', async (req, res) => {
-    // ... (The code for this endpoint is correct and remains the same)
+  console.log('--- LOGIN ENDPOINT HIT ---');
   const { username, password } = req.body;
+  console.log(`--- Attempting login for user: ${username} ---`);
+
   try {
     const sheets = await getGoogleSheetsClient();
+
+    console.log('--- 4. Fetching user data from Google Sheet. ---');
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'Users!A:E',
     });
+    console.log('--- 5. Successfully fetched data from sheet. ---');
+
     const users = response.data.values || [];
-    const user = users.find(row => row[1] === username);
+    const user = users.find(row => row && row[1] === username);
+
     if (!user) {
+      console.log(`--- User not found: ${username} ---`);
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
+    console.log(`--- User found: ${username}. Comparing password. ---`);
+
     const storedHash = user[4];
     const isMatch = await bcrypt.compare(password, storedHash);
+
     if (isMatch) {
+      console.log(`--- Password MATCH for user: ${username}. Login successful. ---`);
       res.json({ 
         message: 'Login successful!',
         user: { id: user[0], username: user[1], fullName: user[2], role: user[3] } 
       });
     } else {
+      console.log(`--- Password NO MATCH for user: ${username}. ---`);
       res.status(401).json({ message: 'Invalid credentials.' });
     }
-  } catch (error) { res.status(500).send('Server Error'); }
+  } catch (error) {
+    console.error('---!!! CRITICAL ERROR IN LOGIN FUNCTION !!!---', error);
+    res.status(500).send('Server Error');
+  }
 });
 
-// --- THIS IS THE IMPORTANT CHANGE ---
-// We remove the app.listen() and export the app instead for Vercel
+// We are not including the /register endpoint for this debug version to keep it clean
+
 module.exports = app;

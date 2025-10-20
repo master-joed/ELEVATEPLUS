@@ -23,7 +23,7 @@ function AdminDashboard({ user, onLogout }) {
   const [allKpis] = useState([]); 
   const [selectedCampaignId] = useState('');
   
-  // --- NEW ROLE CHECKS ---
+  // --- ROLE CHECKS ---
   const isSuperAdmin = user.role === 'Super Admin';
   const canManageCampaigns = isSuperAdmin || user.role === 'Admin';
 
@@ -49,7 +49,7 @@ function AdminDashboard({ user, onLogout }) {
   }, []);
 
   const requiresManager = (role) => role === 'Agent' || role === 'Admin'; 
-  const requiresCampaign = (role) => role === 'Agent' || role === 'Manager'; 
+  const requiresCampaign = (role) => role === 'Agent' || role === 'Manager' || role === 'Admin'; // Admin also needs campaign
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -117,7 +117,6 @@ function AdminDashboard({ user, onLogout }) {
   
   // --- Core Logic: Edit User Functions ---
   const handleOpenEdit = (userToEdit) => {
-    // Allows Super Admin and Admin to open the edit modal
     if (!canManageCampaigns) {
         setAlertState({ type: 'error', message: 'Access Denied: Only Admins and Super Admins can manage user records.' });
         return;
@@ -153,9 +152,11 @@ function AdminDashboard({ user, onLogout }) {
     }
 
     // Validation checks should only run if the user has permission to change those fields
-    if (isSuperAdmin && requiresManager(editingUser.role) && !editingUser.managerId) {
-      setAlertState({ type: 'error', message: `Please select a manager for the ${editingUser.role} role.` });
-      return;
+    if (isSuperAdmin) {
+      if (requiresManager(editingUser.role) && !editingUser.managerId) {
+        setAlertState({ type: 'error', message: `Please select a manager for the ${editingUser.role} role.` });
+        return;
+      }
     }
     
     if (requiresCampaign(editingUser.role) && !editingUser.campaignId) {
@@ -165,19 +166,14 @@ function AdminDashboard({ user, onLogout }) {
 
     try {
       let updates = {
-          role: editingUser.role,
+          // Default: only update the campaign ID
+          campaignId: requiresCampaign(editingUser.role) && editingUser.campaignId ? editingUser.campaignId : null,
       };
 
-      // Only Super Admin can update Manager ID and Role fields.
-      // Admin can ONLY update the Campaign ID.
+      // Only Super Admin can update Role and Manager ID.
       if (isSuperAdmin) {
+        updates.role = editingUser.role;
         updates.managerId = requiresManager(editingUser.role) && editingUser.managerId ? editingUser.managerId : null;
-        updates.campaignId = requiresCampaign(editingUser.role) && editingUser.campaignId ? editingUser.campaignId : null;
-      } else if (canManageCampaigns) { // This is an Admin
-        // Only allow campaignId to be updated
-        updates = {
-            campaignId: requiresCampaign(editingUser.role) && editingUser.campaignId ? editingUser.campaignId : null,
-        };
       }
       
       const userRef = doc(db, 'users', editingUser.id);
@@ -201,7 +197,7 @@ function AdminDashboard({ user, onLogout }) {
             Campaign & KPI Management
         </Typography>
         <Alert severity="info">
-            This tab will be built next! You will manage your IT Team's KPIs here.
+            The full KPI management functionality is waiting to be built in this section.
         </Alert>
     </Container>
   );
@@ -227,7 +223,7 @@ function AdminDashboard({ user, onLogout }) {
                     <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
                     
                     <Alert severity="info" sx={{ mb: 2 }}>
-                        Only Super Admins can add new users and assign managers. Admins can assign campaigns to existing users.
+                        Only Super Admins and Managers are assignable to Agents and Admins.
                     </Alert>
 
                     <form onSubmit={handleAddUser}>
@@ -337,7 +333,6 @@ function AdminDashboard({ user, onLogout }) {
                                         <TableCell>{managerName}</TableCell> 
                                         <TableCell>{userCampaign?.name || 'N/A'}</TableCell> 
                                         <TableCell>
-                                            {/* Allow Admins and Super Admins to click Edit */}
                                             <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)} disabled={!canManageCampaigns}>
                                                 Edit
                                             </Button>
@@ -425,7 +420,7 @@ function AdminDashboard({ user, onLogout }) {
                               <TextField label="Email" value={editingUser.email} fullWidth disabled variant="filled" />
                           </Grid>
                           
-                          {/* 2. ROLE DROPDOWN: Super Admin Only */}
+                          {/* 2. ROLE DROPDOWN */}
                           <Grid item xs={12}>
                               <TextField
                                   select
@@ -436,7 +431,7 @@ function AdminDashboard({ user, onLogout }) {
                                   required
                                   fullWidth
                                   variant="outlined"
-                                  disabled={!isSuperAdmin} // Disabled for standard Admin
+                                  disabled={!isSuperAdmin} // Only Super Admin can change role
                               >
                                   <MenuItem value="Super Admin">Super Admin</MenuItem>
                                   <MenuItem value="Admin">Admin</MenuItem>
@@ -445,7 +440,7 @@ function AdminDashboard({ user, onLogout }) {
                               </TextField>
                           </Grid>
 
-                          {/* 3. CAMPAIGN ASSIGNMENT DROPDOWN: Super Admin and Admin */}
+                          {/* 3. CAMPAIGN ASSIGNMENT DROPDOWN: Admin and Super Admin */}
                           {requiresCampaign(editingUser.role) && (
                             <Grid item xs={12}>
                                 <TextField
@@ -483,7 +478,7 @@ function AdminDashboard({ user, onLogout }) {
                                       fullWidth
                                       variant="outlined"
                                       SelectProps={{ displayEmpty: true }}
-                                      disabled={!isSuperAdmin} // Disabled for standard Admin
+                                      disabled={!isSuperAdmin} // Only Super Admin can change manager
                                   >
                                       <MenuItem value="" disabled>Select Manager</MenuItem>
                                       {managers.map((manager) => (

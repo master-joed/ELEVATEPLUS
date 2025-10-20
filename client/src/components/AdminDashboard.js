@@ -4,11 +4,12 @@ import { db, auth } from '../firebase';
 // --- FINAL FIX: Ensure ALL required Firestore functions are imported ---
 import { 
     collection, getDocs, setDoc, doc, query, where, updateDoc, 
-    arrayUnion, arrayRemove, addDoc 
+    arrayUnion, arrayRemove, addDoc, deleteDoc
 } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
-import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab, Switch, FormControl, InputLabel } from '@mui/material';
+import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab, Switch, FormControl, InputLabel, IconButton } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
@@ -92,6 +93,30 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  // --- CORE LOGIC: USER DELETE FUNCTION (VERIFIED) ---
+  const handleDeleteUser = async (userId, userEmail) => {
+    if (!isSuperAdmin) {
+        setAlertState({ type: 'error', message: 'Access Denied: Only Super Admins can delete users.' });
+        return;
+    }
+    if (!window.confirm(`Are you sure you want to delete user ${userEmail}? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        // Delete the Firestore document (the user's role data)
+        await deleteDoc(doc(db, "users", userId));
+        
+        // NOTE: Deleting the Firebase Auth user record requires Cloud Functions (Blaze Plan).
+        // For the Spark plan, we only delete the user's document, making their login useless.
+        
+        await fetchAllData();
+        setAlertState({ type: 'success', message: `User ${userEmail} successfully deleted from database records.` });
+    } catch (error) {
+        setAlertState({ type: 'error', message: `Failed to delete user: ${error.message}` });
+    }
+  };
+  
   // --- CORE LOGIC: CAMPAIGN/KPI ACTIONS ---
   const handleAddCampaign = async (e) => {
     e.preventDefault();
@@ -142,7 +167,7 @@ function AdminDashboard({ user, onLogout }) {
     try {
         if (isChecked) {
             if (snapshot.empty) {
-                await addDoc(collection(db, 'campaignKpis'), { // Use addDoc for auto-ID
+                await addDoc(collection(db, 'campaignKpis'), { 
                     campaignId: campaignId,
                     kpiId: kpiId,
                     isEnabled: true,
@@ -157,7 +182,7 @@ function AdminDashboard({ user, onLogout }) {
                  await updateDoc(docRef, { isEnabled: false });
             }
         }
-        await fetchAllData(); // Re-fetch to update the state
+        await fetchAllData(); 
         setAlertState({ type: 'success', message: `KPI toggled successfully.` });
     } catch (error) {
         setAlertState({ type: 'error', message: `Failed to toggle KPI: ${error.message}` });
@@ -169,13 +194,11 @@ function AdminDashboard({ user, onLogout }) {
       
       try {
           if (isAssigned) {
-              // REMOVE the manager's UID from the array
               await updateDoc(campaignRef, {
                   managerIds: arrayRemove(managerId)
               });
               setAlertState({ type: 'info', message: `Manager removed from campaign.` });
           } else {
-              // ADD the manager's UID to the array
               await updateDoc(campaignRef, {
                   managerIds: arrayUnion(managerId)
               });
@@ -187,7 +210,58 @@ function AdminDashboard({ user, onLogout }) {
       }
   };
 
+  const handleDeleteCampaign = async (campaignId, campaignName) => {
+      if (!isSuperAdmin || !window.confirm(`Are you sure you want to delete the campaign ${campaignName} and all related data?`)) {
+          return;
+      }
+      try {
+          // 1. Delete Campaign document
+          await deleteDoc(doc(db, "campaigns", campaignId));
+          
+          // 2. Find and delete all campaignKpis documents linked to this campaign
+          const q = query(collection(db, 'campaignKpis'), where('campaignId', '==', campaignId));
+          const snapshot = await getDocs(q);
+          snapshot.forEach(async (doc) => {
+              await deleteDoc(doc.ref);
+          });
+
+          // 3. Update all users whose campaignId is this ID (cleanup)
+          const userQ = query(collection(db, 'users'), where('campaignId', '==', campaignId));
+          const userSnapshot = await getDocs(userQ);
+          userSnapshot.forEach(async (doc) => {
+              await updateDoc(doc.ref, { campaignId: null });
+          });
+
+          await fetchAllData();
+          setAlertState({ type: 'success', message: `Campaign '${campaignName}' deleted successfully.` });
+      } catch (error) {
+          setAlertState({ type: 'error', message: `Failed to delete campaign: ${error.message}` });
+      }
+  };
   
+  const handleDeleteMasterKpi = async (kpiId, kpiName) => {
+      if (!isSuperAdmin || !window.confirm(`Are you sure you want to delete the master KPI ${kpiName}? This will remove it from ALL campaigns.`)) {
+          return;
+      }
+      try {
+          // 1. Delete Master KPI document
+          await deleteDoc(doc(db, "kpis", kpiId));
+          
+          // 2. Delete all campaignKpis documents linked to this KPI
+          const q = query(collection(db, 'campaignKpis'), where('kpiId', '==', kpiId));
+          const snapshot = await getDocs(q);
+          snapshot.forEach(async (doc) => {
+              await deleteDoc(doc.ref);
+          });
+
+          await fetchAllData();
+          setAlertState({ type: 'success', message: `Master KPI '${kpiName}' deleted successfully.` });
+      } catch (error) {
+          setAlertState({ type: 'error', message: `Failed to delete KPI: ${error.message}` });
+      }
+  };
+
+
   // --- CORE LOGIC: USER ACTIONS ---
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -457,6 +531,7 @@ function AdminDashboard({ user, onLogout }) {
                                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>KPI Name</TableCell>
                                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Data Type</TableCell>
                                     <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Enabled</TableCell>
+                                    <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Delete</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -475,6 +550,16 @@ function AdminDashboard({ user, onLogout }) {
                                                     color="success"
                                                 />
                                             </TableCell>
+                                            <TableCell align="center">
+                                                <IconButton 
+                                                    color="error" 
+                                                    size="small" 
+                                                    disabled={!isSuperAdmin}
+                                                    onClick={() => handleDeleteMasterKpi(kpi.id, kpi.name)}
+                                                >
+                                                    <DeleteIcon />
+                                                </IconButton>
+                                            </TableCell>
                                         </TableRow>
                                     );
                                 })}
@@ -492,7 +577,6 @@ function AdminDashboard({ user, onLogout }) {
 };
   
   const renderUserManagement = () => {
-    // ... (User Management logic remains the same)
     return (
         <Container 
             component={Paper} 
@@ -622,10 +706,18 @@ function AdminDashboard({ user, onLogout }) {
                                         <TableCell>{u.role}</TableCell>
                                         <TableCell>{managerName}</TableCell> 
                                         <TableCell>{userCampaign?.name || 'N/A'}</TableCell> 
-                                        <TableCell>
+                                        <TableCell sx={{ display: 'flex', gap: 1 }}>
                                             <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)} disabled={!canManageCampaigns}>
                                                 Edit
                                             </Button>
+                                            <IconButton 
+                                                color="error" 
+                                                size="small" 
+                                                disabled={!isSuperAdmin}
+                                                onClick={() => handleDeleteUser(u.id, u.email)}
+                                            >
+                                                <DeleteIcon />
+                                            </IconButton>
                                         </TableCell>
                                     </TableRow>
                                 );
@@ -639,8 +731,6 @@ function AdminDashboard({ user, onLogout }) {
   };
 
   const renderView = () => {
-    const isSuperAdminManagerView = user.role === 'Super Admin' && currentView === 'Manager';
-    
     switch(currentView) {
         case 'Admin':
             return renderUserManagement();
@@ -648,6 +738,7 @@ function AdminDashboard({ user, onLogout }) {
             return renderKpiManagement(); 
         case 'Manager':
             // If Super Admin is viewing the Manager tab, set isSimulated=false
+            const isSuperAdminManagerView = user.role === 'Super Admin' && currentView === 'Manager';
             return <ManagerDashboard user={user} onLogout={onLogout} isSimulated={!isSuperAdminManagerView} />;
         case 'Agent':
             return <AgentDashboard user={{ ...user, role: "Agent", fullName: "Admin (Agent View)" }} onLogout={onLogout} isSimulated={true} />;

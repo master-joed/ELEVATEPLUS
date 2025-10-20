@@ -3,13 +3,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore'; 
 
-// --- CORRECTED MUI IMPORTS: All necessary components are now included ---
 import { 
     Container, Typography, Button, 
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
     Paper, Box, Grid, Alert, Select, MenuItem, InputLabel, FormControl 
 } from '@mui/material';
-// -------------------------------------------------------------------
 
 import AgentScoreForm from './AgentScoreForm'; 
 
@@ -25,12 +23,14 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
     const fetchAllManagerData = useCallback(async () => {
         setIsLoading(true);
         try {
-            // 1. Fetch Campaigns assigned to this manager (or all campaigns for Admin sim)
+            const userIsManagerOrSuperAdmin = user.role === 'Manager' || user.role === 'Super Admin';
+            
+            // 1. Fetch Campaigns assigned to this user (or all campaigns for Admin sim)
             const campaignsSnapshot = await getDocs(collection(db, 'campaigns'));
             const campaignList = campaignsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCampaigns(campaignList);
 
-            // 2. Fetch Campaign-KPI links
+            // 2. Fetch Campaign-KPI links (required for score entry)
             const campaignKpisSnapshot = await getDocs(collection(db, "campaignKpis"));
             const links = {};
             campaignKpisSnapshot.forEach(doc => {
@@ -40,9 +40,8 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
             });
             setCampaignKpis(links);
 
-            // Set default campaign selection
-            // Find the first campaign this user is assigned to, or the first one in the list.
-            const defaultCampaign = campaignList.find(c => c.id === user.campaignId) || campaignList[0];
+            // Set default campaign selection (The Business Technology Solutions campaign is likely the first one created)
+            const defaultCampaign = campaignList[0];
             if (defaultCampaign) {
                 setSelectedCampaign(defaultCampaign);
                 
@@ -51,12 +50,13 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                 
                 let agentsQuery = query(collection(db, 'users'), where('role', '==', 'Agent'));
                 
-                if (!isSimulated) {
-                    // Filter by manager's UID
+                // FIX: Only apply the managerId filter if it's NOT a simulated view
+                if (!isSimulated && userIsManagerOrSuperAdmin) {
+                    // Filter by manager's UID (which is the Super Admin UID in your case)
                     agentsQuery = query(agentsQuery, where('managerId', '==', managerUID));
                 }
                 
-                // Filter by selected campaign
+                // Filter by selected campaign (All agents should have a campaignId)
                 agentsQuery = query(agentsQuery, where('campaignId', '==', defaultCampaign.id));
 
                 const snapshot = await getDocs(agentsQuery);
@@ -73,13 +73,12 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
         } finally {
             setIsLoading(false);
         }
-    }, [isSimulated, user.campaignId, user.uid]);
+    }, [isSimulated, user.campaignId, user.uid, user.role]); // Dependency added for user.role
 
     useEffect(() => {
-        if (!isSimulated && user.uid) {
+        if (user && user.uid && user.role !== 'Admin') { // Only run fetch for Managers or Super Admins
             fetchAllManagerData();
         } else if (isSimulated) {
-            // Admin simulation bypasses data fetching
             setIsLoading(false);
             setAgents([]);
         }
@@ -88,13 +87,10 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
     const handleCampaignChange = (campaignId) => {
         const campaign = campaigns.find(c => c.id === campaignId);
         setSelectedCampaign(campaign);
-        // Note: In a real app, you would re-run the agent fetch here based on the new campaignId
-        // For simplicity now, you would just see a change in the dropdown.
+        // Note: For a production app, you would re-run fetchAllManagerData here
     };
 
     // --- RENDER CONTENT ---
-
-    // 1. Render the detailed agent view (Coaching/Scores)
     if (selectedAgent) {
         return (
             <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>

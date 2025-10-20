@@ -1,7 +1,7 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, setDoc, doc, query, where, updateDoc } from "firebase/firestore"; 
+import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab } from '@mui/material';
@@ -18,7 +18,7 @@ function AdminDashboard({ user, onLogout }) {
   const [editingUser, setEditingUser] = useState(null); 
   const [isModalOpen, setIsModalOpen] = useState(false); 
   
-  // --- Campaign/KPI States ---
+  // --- Campaign/KPI States (Placeholder for next feature) ---
   const [campaigns, setCampaigns] = useState([]);
   const [allKpis] = useState([]); 
   const [selectedCampaignId] = useState('');
@@ -49,7 +49,7 @@ function AdminDashboard({ user, onLogout }) {
   }, []);
 
   const requiresManager = (role) => role === 'Agent' || role === 'Admin'; 
-  const requiresCampaign = (role) => role === 'Agent' || role === 'Manager' || role === 'Admin'; // Admin also needs campaign
+  const requiresCampaign = (role) => role === 'Agent' || role === 'Manager' || role === 'Admin'; 
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -151,7 +151,6 @@ function AdminDashboard({ user, onLogout }) {
         return;
     }
 
-    // Validation checks should only run if the user has permission to change those fields
     if (isSuperAdmin) {
       if (requiresManager(editingUser.role) && !editingUser.managerId) {
         setAlertState({ type: 'error', message: `Please select a manager for the ${editingUser.role} role.` });
@@ -166,11 +165,9 @@ function AdminDashboard({ user, onLogout }) {
 
     try {
       let updates = {
-          // Default: only update the campaign ID
           campaignId: requiresCampaign(editingUser.role) && editingUser.campaignId ? editingUser.campaignId : null,
       };
 
-      // Only Super Admin can update Role and Manager ID.
       if (isSuperAdmin) {
         updates.role = editingUser.role;
         updates.managerId = requiresManager(editingUser.role) && editingUser.managerId ? editingUser.managerId : null;
@@ -190,7 +187,7 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // Placeholder for KPI management tab
+  // --- KPI MANAGEMENT RENDERING FUNCTION ---
   const renderKpiManagement = () => (
     <Container component={Paper} elevation={3} sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}>
         <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>
@@ -201,6 +198,7 @@ function AdminDashboard({ user, onLogout }) {
         </Alert>
     </Container>
   );
+
   
   const renderUserManagement = () => {
     return (
@@ -223,7 +221,7 @@ function AdminDashboard({ user, onLogout }) {
                     <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
                     
                     <Alert severity="info" sx={{ mb: 2 }}>
-                        Only Super Admins and Managers are assignable to Agents and Admins.
+                        Only Super Admins can add new users and change primary roles/managers.
                     </Alert>
 
                     <form onSubmit={handleAddUser}>
@@ -353,17 +351,7 @@ function AdminDashboard({ user, onLogout }) {
         case 'Admin':
             return renderUserManagement();
         case 'KPI':
-            // KPI management logic needs to be fully implemented, but for now, the placeholder is here.
-            return (
-                <Container component={Paper} elevation={3} sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}>
-                    <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>
-                        Campaign & KPI Management
-                    </Typography>
-                    <Alert severity="info">
-                        The full KPI management functionality is waiting to be built in this section.
-                    </Alert>
-                </Container>
-            );
+            return renderKpiManagement();
         case 'Manager':
             return <ManagerDashboard user={{ ...user, role: "Manager", fullName: "Admin (Manager View)" }} onLogout={onLogout} isSimulated={true} />;
         case 'Agent':

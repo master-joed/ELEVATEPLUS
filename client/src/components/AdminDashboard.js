@@ -25,6 +25,7 @@ function AdminDashboard({ user, onLogout }) {
     const usersCollection = await getDocs(collection(db, "users"));
     setUsers(usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     
+    // Fetch only Managers for the dropdown list
     const managersQuery = query(collection(db, 'users'), where('role', '==', 'Manager'));
     const managersSnapshot = await getDocs(managersQuery);
     setManagers(managersSnapshot.docs.map(doc => ({ id: doc.id, fullName: doc.data().fullName })));
@@ -150,7 +151,7 @@ function AdminDashboard({ user, onLogout }) {
 
       setIsModalOpen(false);
       setEditingUser(null);
-      await fetchUsers(); 
+      await fetchUsers(); // Re-fetch users and managers to update the tables/lists
 
       setAlertState({ 
         type: 'success', 
@@ -334,7 +335,7 @@ function AdminDashboard({ user, onLogout }) {
                               </TextField>
                           </Grid>
                           
-                          {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) */}
+                          {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) - FIXED */}
                           {editingUser.role === 'Agent' && (
                               <Grid item xs={12}>
                                   <TextField

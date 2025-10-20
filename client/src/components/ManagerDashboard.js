@@ -1,12 +1,11 @@
 // src/components/ManagerDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-// Added query and where for filtering agents
 import { collection, getDocs, query, where } from 'firebase/firestore'; 
 
 import { Container, Typography, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Grid, Alert } from '@mui/material';
 
-function ManagerDashboard({ user, onLogout, isSimulated }) { // isSimulated prop added
+function ManagerDashboard({ user, onLogout, isSimulated }) { 
     const [agents, setAgents] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
@@ -16,27 +15,23 @@ function ManagerDashboard({ user, onLogout, isSimulated }) { // isSimulated prop
         const fetchAgents = async () => {
             setIsLoading(true);
             try {
-                // Get the logged-in manager's UID (which is the user's document ID in Firestore)
                 const managerUID = user.uid; 
                 
-                // If the view is simulated by the Admin, or the UID is missing, don't fetch.
                 if (isSimulated || !managerUID) {
                      setAgents([]); 
                      return;
                 }
 
-                // Query Firestore: Get documents where role is 'Agent' AND managerId matches the manager's UID
                 const agentsQuery = query(
                     collection(db, 'users'), 
                     where('role', '==', 'Agent'),
-                    where('managerId', '==', managerUID) // CRUCIAL FILTER: Only assigned agents
+                    where('managerId', '==', managerUID) 
                 );
                 const snapshot = await getDocs(agentsQuery);
                 
                 const agentList = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data(),
-                    // Placeholder for KPI scores (will be fetched later)
                     csat: 'N/A', 
                     quality: 'N/A', 
                     aht: 'N/A' 
@@ -52,7 +47,6 @@ function ManagerDashboard({ user, onLogout, isSimulated }) { // isSimulated prop
         if (user && user.uid && !isSimulated) { 
             fetchAgents();
         } else if (isSimulated) {
-            // For Admin simulation: set loading state to false immediately
             setIsLoading(false);
             setAgents([]);
         }

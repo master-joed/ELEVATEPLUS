@@ -1,12 +1,10 @@
 // client/src/components/AdminDashboard.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } => 'react';
 import { db, auth } from '../firebase';
-// Note: array-contains-any is the best way to query multiple role types
 import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
-import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert } from '@mui/material';
-import AdminNav from './AdminNav';
+import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab } from '@mui/material';
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
@@ -19,16 +17,20 @@ function AdminDashboard({ user, onLogout }) {
   
   const [editingUser, setEditingUser] = useState(null); 
   const [isModalOpen, setIsModalOpen] = useState(false); 
+  
+  // --- Campaign/KPI States (Placeholder) ---
+  const [campaigns] = useState([]); // Placeholder for campaign data
+  const [allKpis] = useState([]); // Placeholder for KPI data
+  const [selectedCampaignId] = useState('');
 
-  // Function to fetch all users and managers (Admin or Manager) from Firestore
+  // Function to fetch all users and managers (Super Admin, Admin, Manager)
   const fetchUsers = async () => {
-    // 1. Fetch ALL users for the table display
     const usersCollection = await getDocs(collection(db, "users"));
     const allUsers = usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setUsers(allUsers);
     
-    // 2. Filter for potential Managers (Admin or Manager roles) for the dropdown list
-    const managerList = allUsers.filter(u => u.role === 'Manager' || u.role === 'Admin');
+    // Filter for potential Managers (Super Admin, Admin, or Manager roles)
+    const managerList = allUsers.filter(u => u.role === 'Manager' || u.role === 'Admin' || u.role === 'Super Admin');
     setManagers(managerList.map(u => ({ id: u.id, fullName: u.fullName, role: u.role })));
   };
 
@@ -160,121 +162,138 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // --- FUNCTION TO RENDER THE SELECTED VIEW ---
-  const renderDashboardView = () => {
-    if (currentView === 'Manager') {
-        return <ManagerDashboard user={{ ...user, role: "Manager", fullName: "Admin (Manager View)" }} onLogout={onLogout} isSimulated={true} />;
-    }
-    if (currentView === 'Agent') {
-        return <AgentDashboard user={{ ...user, role: "Agent", fullName: "Admin (Agent View)" }} onLogout={onLogout} isSimulated={true} />;
-    }
+  // --- RENDERING FUNCTIONS ---
+  
+  // Placeholder for KPI management tab (will be implemented next)
+  const renderKpiManagement = () => (
+    <Container component={Paper} elevation={3} sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}>
+        <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>
+            Campaign & KPI Management
+        </Typography>
+        <Alert severity="info">
+            This tab will be built next! You will manage your IT Team's KPIs here.
+        </Alert>
+    </Container>
+  );
 
-    // Default: Admin Tools view
-    return (
-        <Container 
-            component={Paper} 
-            elevation={3} 
-            sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}
-        >
-            <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>User Management Tools</Typography>
+  const renderUserManagement = () => (
+    <Container 
+        component={Paper} 
+        elevation={3} 
+        sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}
+    >
+        <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>User Management Tools</Typography>
+        
+        {alertState.message && (
+            <Alert severity={alertState.type} sx={{ mt: 2, mb: 2 }}>
+                {alertState.message}
+            </Alert>
+        )}
+
+        <Box sx={{ my: 4, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+            <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
             
-            {alertState.message && (
-                <Alert severity={alertState.type} sx={{ mt: 2, mb: 2 }}>
-                    {alertState.message}
-                </Alert>
-            )}
+            <Alert severity="info" sx={{ mb: 2 }}>
+                Super Admins, Admins, and Managers are eligible to manage agents and appear in the dropdown list.
+            </Alert>
 
-            <Box sx={{ my: 4, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-                <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
-                
-                {/* NEW MESSAGE: Clarifies why Admin is in the list */}
-                <Alert severity="info" sx={{ mb: 2 }}>
-                    Users with the **Admin** role also appear in the "Select Manager" list below.
-                </Alert>
-
-                <form onSubmit={handleAddUser}>
-                    <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} sm={3}>
-                        <TextField label="Full Name" name="fullName" value={newUser.fullName} onChange={handleInputChange} required fullWidth variant="outlined" />
-                        </Grid>
-                        <Grid item xs={12} sm={3}>
-                        <TextField label="Email" name="email" type="email" value={newUser.email} onChange={handleInputChange} required fullWidth variant="outlined"/>
-                        </Grid>
-                        <Grid item xs={12} sm={3}>
-                        <TextField label="Password" name="password" type="password" value={newUser.password} onChange={handleInputChange} required fullWidth variant="outlined"/>
-                        </Grid>
-                        <Grid item xs={12} sm={2}>
-                            <Select name="role" value={newUser.role} onChange={handleInputChange} required fullWidth variant="outlined">
-                                <MenuItem value="Agent">Agent</MenuItem>
-                                <MenuItem value="Manager">Manager</MenuItem>
-                                <MenuItem value="Admin">Admin</MenuItem>
-                            </Select>
-                        </Grid>
-                        
-                        {/* Manager Assignment Dropdown */}
-                        {newUser.role === 'Agent' && (
-                            <Grid item xs={12} sm={3}>
-                                <TextField
-                                    select
-                                    label="Select Manager"
-                                    name="managerId"
-                                    value={newUser.managerId || ''}
-                                    onChange={handleInputChange}
-                                    required
-                                    fullWidth
-                                    variant="outlined"
-                                >
-                                    <MenuItem value="" disabled>Select Manager</MenuItem>
-                                    {managers.map((manager) => (
-                                        // Include role in display for clarity
-                                        <MenuItem key={manager.id} value={manager.id}>
-                                            {manager.fullName} ({manager.role})
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
-                            </Grid>
-                        )}
-                        <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
-                            <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
-                        </Grid>
+            <form onSubmit={handleAddUser}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} sm={3}>
+                    <TextField label="Full Name" name="fullName" value={newUser.fullName} onChange={handleInputChange} required fullWidth variant="outlined" />
                     </Grid>
-                </form>
-            </Box>
+                    <Grid item xs={12} sm={3}>
+                    <TextField label="Email" name="email" type="email" value={newUser.email} onChange={handleInputChange} required fullWidth variant="outlined"/>
+                    </Grid>
+                    <Grid item xs={12} sm={3}>
+                    <TextField label="Password" name="password" type="password" value={newUser.password} onChange={handleInputChange} required fullWidth variant="outlined"/>
+                    </Grid>
+                    <Grid item xs={12} sm={2}>
+                        <TextField select label="Role" name="role" value={newUser.role} onChange={handleInputChange} required fullWidth variant="outlined">
+                            <MenuItem value="Super Admin">Super Admin</MenuItem>
+                            <MenuItem value="Admin">Admin</MenuItem>
+                            <MenuItem value="Manager">Manager</MenuItem>
+                            <MenuItem value="Agent">Agent</MenuItem>
+                        </TextField>
+                    </Grid>
+                    
+                    {/* Manager Assignment Dropdown */}
+                    {newUser.role === 'Agent' && (
+                        <Grid item xs={12} sm={3}>
+                            <TextField
+                                select
+                                label="Select Manager"
+                                name="managerId"
+                                value={newUser.managerId || ''}
+                                onChange={handleInputChange}
+                                required
+                                fullWidth
+                                variant="outlined"
+                            >
+                                <MenuItem value="" disabled>Select Manager</MenuItem>
+                                {managers.map((manager) => (
+                                    <MenuItem key={manager.id} value={manager.id}>
+                                        {manager.fullName} ({manager.role})
+                                    </MenuItem>
+                                ))}
+                            </TextField>
+                        </Grid>
+                    )}
+                    <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
+                        <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
+                    </Grid>
+                </Grid>
+            </form>
+        </Box>
 
-            {/* --- MANAGE USERS TABLE --- */}
-            <Box sx={{ my: 4 }}>
-                <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Manage Users</Typography>
-                <TableContainer component={Paper} elevation={3}>
-                    <Table sx={{ minWidth: 650 }} aria-label="user table">
-                        <TableHead sx={{ backgroundColor: 'primary.light' }}>
-                            <TableRow>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Full Name</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
+        {/* --- MANAGE USERS TABLE --- */}
+        <Box sx={{ my: 4 }}>
+            <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Manage Users</Typography>
+            <TableContainer component={Paper} elevation={3}>
+                <Table sx={{ minWidth: 650 }} aria-label="user table">
+                    <TableHead sx={{ backgroundColor: 'primary.light' }}>
+                        <TableRow>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Full Name</TableCell>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {users.map((u) => (
+                            <TableRow key={u.id} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#f9f9f9' } }}>
+                                <TableCell component="th" scope="row">{u.fullName}</TableCell>
+                                <TableCell>{u.email}</TableCell>
+                                <TableCell>{u.role}</TableCell>
+                                <TableCell>
+                                    <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)}>
+                                        Edit
+                                    </Button>
+                                </TableCell>
                             </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {users.map((u) => (
-                                <TableRow key={u.id} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#f9f9f9' } }}>
-                                    <TableCell component="th" scope="row">{u.fullName}</TableCell>
-                                    <TableCell>{u.email}</TableCell>
-                                    <TableCell>{u.role}</TableCell>
-                                    <TableCell>
-                                        <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)}>
-                                            Edit
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                        ))}
+                    </TableBody>
                 </TableContainer>
             </Box>
         </Container>
-    );
-  };
-  
+  );
+
+  const renderView = () => {
+    switch(currentView) {
+        case 'Admin':
+            return renderUserManagement();
+        case 'KPI':
+            return renderKpiManagement();
+        case 'Manager':
+            return <ManagerDashboard user={{ ...user, role: "Manager", fullName: "Admin (Manager View)" }} onLogout={onLogout} isSimulated={true} />;
+        case 'Agent':
+            return <AgentDashboard user={{ ...user, role: "Agent", fullName: "Admin (Agent View)" }} onLogout={onLogout} isSimulated={true} />;
+        default:
+            return renderUserManagement();
+    }
+  }
+
+  // The main return block for the Admin Dashboard component
   return (
     <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -294,9 +313,16 @@ function AdminDashboard({ user, onLogout }) {
         </Box>
       </Box>
       
-      <AdminNav currentView={currentView} onViewChange={setCurrentView} />
+      <Box sx={{ width: '100%', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={currentView} onChange={(e, val) => setCurrentView(val)} textColor="primary" indicatorColor="primary">
+            <Tab value="Admin" label="User Management" />
+            <Tab value="KPI" label="Campaigns & KPIs" />
+            <Tab value="Manager" label="Manager View" />
+            <Tab value="Agent" label="Agent View" />
+          </Tabs>
+      </Box>
 
-      {renderDashboardView()}
+      {renderView()}
 
       {/* --- EDIT USER MODAL (POPUP FORM) --- */}
       {isModalOpen && editingUser && (
@@ -332,9 +358,10 @@ function AdminDashboard({ user, onLogout }) {
                                   fullWidth
                                   variant="outlined"
                               >
-                                  <MenuItem value="Agent">Agent</MenuItem>
-                                  <MenuItem value="Manager">Manager</MenuItem>
+                                  <MenuItem value="Super Admin">Super Admin</MenuItem>
                                   <MenuItem value="Admin">Admin</MenuItem>
+                                  <MenuItem value="Manager">Manager</MenuItem>
+                                  <MenuItem value="Agent">Agent</MenuItem>
                               </TextField>
                           </Grid>
                           

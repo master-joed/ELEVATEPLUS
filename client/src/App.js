@@ -12,7 +12,7 @@ import AdminDashboard from './components/AdminDashboard';
 import ManagerDashboard from './components/ManagerDashboard';
 import AgentDashboard from './components/AgentDashboard';
 
-// Define the custom branded theme using LTVplus blue
+// Define the custom branded theme
 const lightTheme = createTheme({
   palette: {
     mode: 'light', 
@@ -53,7 +53,7 @@ function App() {
         const userDocRef = doc(db, "users", authUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
-          setUser({ ...authUser, uid: authUser.uid, ...userDoc.data() }); // Ensure uid is available
+          setUser({ ...authUser, uid: authUser.uid, ...userDoc.data() }); 
         } else {
             setUser({ ...authUser, role: 'Unassigned', uid: authUser.uid });
         }
@@ -79,6 +79,7 @@ function App() {
     }
 
     switch (user.role) {
+      case 'Super Admin': // <-- NEW ROLE
       case 'Admin':
         return <AdminDashboard user={user} onLogout={handleLogout} />;
       case 'Manager':

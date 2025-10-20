@@ -1,28 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { auth, db } from './firebase';
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import './App.css';
 
-// Import the components you just created
 import LoginPage from './components/LoginPage';
 import AdminDashboard from './components/AdminDashboard';
 import ManagerDashboard from './components/ManagerDashboard';
 import AgentDashboard from './components/AgentDashboard';
 
 function App() {
-  // The 'user' state will hold the logged-in user's data
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        const userDocRef = doc(db, "users", authUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists()) {
+          setUser({ ...authUser, ...userDoc.data() });
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleLogout = () => {
-    setUser(null); // Clear the user state to log out
+    auth.signOut();
   };
 
-  // This function decides which component to show
   const renderContent = () => {
-    if (!user) {
-      // If no one is logged in, show the login page
-      return <LoginPage onLoginSuccess={setUser} />;
+    if (loading) {
+      return <p>Loading...</p>;
     }
-
-    // If a user is logged in, check their role and show the correct dashboard
+    if (!user) {
+      return <LoginPage />;
+    }
     switch (user.role) {
       case 'Admin':
         return <AdminDashboard user={user} onLogout={handleLogout} />;
@@ -31,8 +48,12 @@ function App() {
       case 'Agent':
         return <AgentDashboard user={user} onLogout={handleLogout} />;
       default:
-        // If the role is unknown, log them out
-        return <LoginPage onLoginSuccess={setUser} />;
+        return (
+          <div>
+            <p>Waiting for role assignment. Please contact an admin.</p>
+            <button onClick={handleLogout}>Logout</button>
+          </div>
+        );
     }
   };
 

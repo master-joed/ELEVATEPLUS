@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
+import { auth, db } from '../firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { setDoc, doc } from "firebase/firestore";
 
-function LoginPage({ onLoginSuccess }) {
+function LoginPage() {
   const [error, setError] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
 
-  const handleLogin = async (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    const username = event.target.username.value;
+    const email = event.target.email.value;
     const password = event.target.password.value;
-    const apiUrl = '/api/login';
 
     try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed!');
+      if (isRegistering) {
+        const fullName = event.target.fullName.value;
+        const role = event.target.role.value;
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await setDoc(doc(db, "users", userCredential.user.uid), {
+          fullName: fullName,
+          role: role,
+          email: email
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
       }
-      onLoginSuccess(data.user); // Send the user data back to App.js
     } catch (err) {
       setError(err.message);
     }
@@ -28,16 +33,25 @@ function LoginPage({ onLoginSuccess }) {
 
   return (
     <div>
-      <h1>ELEVATEPLUS Login</h1>
-      <form onSubmit={handleLogin}>
-        <div>
-          <input type="text" name="username" placeholder="Username" required />
-        </div>
-        <div>
-          <input type="password" name="password" placeholder="Password" required />
-        </div>
-        <button type="submit">Login</button>
+      <h1>{isRegistering ? 'Register for ELEVATEPLUS' : 'ELEVATEPLUS Login'}</h1>
+      <form onSubmit={handleSubmit}>
+        {isRegistering && (
+          <>
+            <input type="text" name="fullName" placeholder="Full Name" required />
+            <select name="role" required>
+              <option value="Agent">Agent</option>
+              <option value="Manager">Manager</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </>
+        )}
+        <input type="email" name="email" placeholder="Email" required />
+        <input type="password" name="password" placeholder="Password" required />
+        <button type="submit">{isRegistering ? 'Register' : 'Login'}</button>
       </form>
+      <button onClick={() => setIsRegistering(!isRegistering)}>
+        {isRegistering ? 'Already have an account? Login' : 'Need an account? Register'}
+      </button>
       {error && <p style={{ color: 'red' }}>{error}</p>}
     </div>
   );

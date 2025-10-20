@@ -3,10 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, setDoc, doc } from "firebase/firestore";
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
-// ^--- sendPasswordResetEmail is required for the new feature
 
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert } from '@mui/material';
 import AdminNav from './AdminNav';
+
+// --- FIX: ADD MISSING IMPORTS ---
+import ManagerDashboard from './ManagerDashboard';
+import AgentDashboard from './AgentDashboard';
+// ---------------------------------
 
 function AdminDashboard({ user, onLogout }) {
   // State to control which dashboard view the Admin is looking at

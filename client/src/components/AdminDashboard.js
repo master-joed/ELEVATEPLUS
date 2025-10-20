@@ -1,6 +1,7 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
+// Note: array-contains-any is the best way to query multiple role types
 import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
@@ -16,19 +17,19 @@ function AdminDashboard({ user, onLogout }) {
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Agent' });
   const [alertState, setAlertState] = useState({ type: '', message: '' });
   
-  // --- Edit User State ---
   const [editingUser, setEditingUser] = useState(null); 
   const [isModalOpen, setIsModalOpen] = useState(false); 
 
-  // Function to fetch all users and managers from Firestore
+  // Function to fetch all users and managers (Admin or Manager) from Firestore
   const fetchUsers = async () => {
+    // 1. Fetch ALL users for the table display
     const usersCollection = await getDocs(collection(db, "users"));
-    setUsers(usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const allUsers = usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setUsers(allUsers);
     
-    // Fetch only Managers for the dropdown list
-    const managersQuery = query(collection(db, 'users'), where('role', '==', 'Manager'));
-    const managersSnapshot = await getDocs(managersQuery);
-    setManagers(managersSnapshot.docs.map(doc => ({ id: doc.id, fullName: doc.data().fullName })));
+    // 2. Filter for potential Managers (Admin or Manager roles) for the dropdown list
+    const managerList = allUsers.filter(u => u.role === 'Manager' || u.role === 'Admin');
+    setManagers(managerList.map(u => ({ id: u.id, fullName: u.fullName, role: u.role })));
   };
 
   useEffect(() => {
@@ -55,7 +56,6 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // --- Core Logic: Add New User ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
@@ -92,7 +92,6 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
   
-  // --- Core Logic: Send Password Reset Email ---
   const handlePasswordReset = async () => {
     try {
       await sendPasswordResetEmail(auth, user.email);
@@ -108,7 +107,6 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
   
-  // --- Core Logic: Edit User Functions ---
   const handleOpenEdit = (userToEdit) => {
     setEditingUser({
       id: userToEdit.id,
@@ -125,7 +123,6 @@ function AdminDashboard({ user, onLogout }) {
     setEditingUser(prev => ({ 
         ...prev, 
         [name]: value,
-        // If role is changed to Agent, ensure managerId is kept, otherwise clear it on role change
         ...(name === 'role' && value !== 'Agent' && { managerId: '' }) 
     }));
   };
@@ -151,7 +148,7 @@ function AdminDashboard({ user, onLogout }) {
 
       setIsModalOpen(false);
       setEditingUser(null);
-      await fetchUsers(); // Re-fetch users and managers to update the tables/lists
+      await fetchUsers(); 
 
       setAlertState({ 
         type: 'success', 
@@ -189,6 +186,12 @@ function AdminDashboard({ user, onLogout }) {
 
             <Box sx={{ my: 4, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
                 <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
+                
+                {/* NEW MESSAGE: Clarifies why Admin is in the list */}
+                <Alert severity="info" sx={{ mb: 2 }}>
+                    Users with the **Admin** role also appear in the "Select Manager" list below.
+                </Alert>
+
                 <form onSubmit={handleAddUser}>
                     <Grid container spacing={2} alignItems="center">
                         <Grid item xs={12} sm={3}>
@@ -223,8 +226,9 @@ function AdminDashboard({ user, onLogout }) {
                                 >
                                     <MenuItem value="" disabled>Select Manager</MenuItem>
                                     {managers.map((manager) => (
+                                        // Include role in display for clarity
                                         <MenuItem key={manager.id} value={manager.id}>
-                                            {manager.fullName}
+                                            {manager.fullName} ({manager.role})
                                         </MenuItem>
                                     ))}
                                 </TextField>
@@ -271,7 +275,6 @@ function AdminDashboard({ user, onLogout }) {
     );
   };
   
-  // The main return block for the Admin Dashboard component
   return (
     <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -335,7 +338,7 @@ function AdminDashboard({ user, onLogout }) {
                               </TextField>
                           </Grid>
                           
-                          {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) - FIXED */}
+                          {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) */}
                           {editingUser.role === 'Agent' && (
                               <Grid item xs={12}>
                                   <TextField
@@ -354,14 +357,14 @@ function AdminDashboard({ user, onLogout }) {
                                       <MenuItem value="" disabled>Select Manager</MenuItem>
                                       {managers.map((manager) => (
                                           <MenuItem key={manager.id} value={manager.id}>
-                                              {manager.fullName}
+                                              {manager.fullName} ({manager.role})
                                           </MenuItem>
                                       ))}
                                   </TextField>
                               </Grid>
                           )}
                           
-                          {/* 4. ACTION BUTTONS (FIXED COLORS) */}
+                          {/* 4. ACTION BUTTONS */}
                           <Grid item xs={6}>
                               <Button variant="outlined" color="secondary" fullWidth onClick={() => setIsModalOpen(false)}>
                                   Cancel

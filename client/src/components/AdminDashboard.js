@@ -45,7 +45,6 @@ function AdminDashboard({ user, onLogout }) {
 
     // 2. Fetch Campaigns
     const campaignsSnapshot = await getDocs(collection(db, "campaigns"));
-    // Note: doc.id is used as campaignId because Firestore auto-generates it.
     const campaignList = campaignsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), docId: doc.id }));
     setCampaigns(campaignList);
     // Set the first campaign as selected by default
@@ -98,7 +97,8 @@ function AdminDashboard({ user, onLogout }) {
     try {
         await addDoc(collection(db, "campaigns"), { 
             name: newCampaignName.trim(), 
-            description: newCampaignDescription.trim() 
+            description: newCampaignDescription.trim(),
+            managerIds: [], // Initialize manager assignment array
         });
         setNewCampaignName('');
         setNewCampaignDescription('');
@@ -154,13 +154,37 @@ function AdminDashboard({ user, onLogout }) {
                  await updateDoc(docRef, { isEnabled: false });
             }
         }
-        await fetchAllData(); 
+        await fetchAllData(); // Re-fetch to update the state
         setAlertState({ type: 'success', message: `KPI toggled successfully.` });
     } catch (error) {
         setAlertState({ type: 'error', message: `Failed to toggle KPI: ${error.message}` });
     }
   };
   
+  const handleToggleCampaignManager = async (managerId, campaignDocId, isAssigned) => {
+      const campaignRef = doc(db, 'campaigns', campaignDocId);
+      
+      try {
+          if (isAssigned) {
+              // REMOVE the manager's UID from the array
+              await updateDoc(campaignRef, {
+                  managerIds: arrayRemove(managerId)
+              });
+              setAlertState({ type: 'info', message: `Manager removed from campaign.` });
+          } else {
+              // ADD the manager's UID to the array
+              await updateDoc(campaignRef, {
+                  managerIds: arrayUnion(managerId)
+              });
+              setAlertState({ type: 'success', message: `Manager assigned to campaign.` });
+          }
+          await fetchAllData();
+      } catch (error) {
+          setAlertState({ type: 'error', message: `Failed to update manager assignment: ${error.message}` });
+      }
+  };
+
+
   // --- CORE LOGIC: USER ACTIONS ---
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -352,15 +376,68 @@ function AdminDashboard({ user, onLogout }) {
                 </Grid>
             </Grid>
             
-            {/* --- 3. KPI Toggle List --- */}
+            {/* --- 3. Assign Managers to Campaign --- */}
             <Box sx={{ mt: 5, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-                <Typography variant="h5" gutterBottom color="primary.dark" sx={{mb: 3}}>
+                 <Typography variant="h5" gutterBottom color="primary.dark" sx={{mb: 3}}>
+                    Assign Managers to Campaign
+                </Typography>
+                
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                    <InputLabel id="campaign-select-manager-label">Select Campaign to Assign Managers</InputLabel>
+                    <Select labelId="campaign-select-manager-label" label="Select Campaign to Assign Managers" value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)} fullWidth disabled={campaigns.length === 0}>
+                        {campaigns.map((camp) => (
+                            <MenuItem key={camp.id} value={camp.id}>
+                                {camp.name}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                {selectedCampaignId && (
+                    <TableContainer component={Paper} elevation={3}>
+                        <Table>
+                            <TableHead sx={{ backgroundColor: 'primary.light' }}>
+                                <TableRow>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Manager Name</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell>
+                                    <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Assigned</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {managers.map((manager) => {
+                                    const currentCamp = campaigns.find(c => c.id === selectedCampaignId);
+                                    const isAssigned = currentCamp?.managerIds?.includes(manager.id) || false;
+
+                                    return (
+                                        <TableRow key={manager.id}>
+                                            <TableCell>{manager.fullName}</TableCell>
+                                            <TableCell>{manager.role}</TableCell>
+                                            <TableCell align="center">
+                                                <Switch
+                                                    checked={isAssigned}
+                                                    onChange={() => handleToggleCampaignManager(manager.id, currentCamp.id, isAssigned)}
+                                                    color="success"
+                                                    disabled={!isSuperAdmin}
+                                                />
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
+            </Box>
+
+            {/* --- 4. KPI Toggle List --- */}
+            <Box sx={{ mt: 5, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+                 <Typography variant="h5" gutterBottom color="primary.dark" sx={{mb: 3}}>
                     Enable/Disable KPIs for Campaign
                 </Typography>
                  
                 <FormControl fullWidth sx={{ mb: 3 }}>
-                    <InputLabel id="campaign-select-label">Select Campaign</InputLabel>
-                    <Select labelId="campaign-select-label" label="Select Campaign" value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)} fullWidth disabled={campaigns.length === 0}>
+                    <InputLabel id="campaign-select-kpi-label">Select Campaign to Manage KPIs</InputLabel>
+                    <Select labelId="campaign-select-kpi-label" label="Select Campaign to Manage KPIs" value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)} fullWidth disabled={campaigns.length === 0}>
                         {campaigns.map((camp) => (
                             <MenuItem key={camp.id} value={camp.id}>
                                 {camp.name}
@@ -410,8 +487,9 @@ function AdminDashboard({ user, onLogout }) {
         </Container>
     );
 };
-  
+
   const renderUserManagement = () => {
+    // ... (User Management logic remains the same)
     return (
         <Container 
             component={Paper} 
@@ -564,7 +642,7 @@ function AdminDashboard({ user, onLogout }) {
         case 'Admin':
             return renderUserManagement();
         case 'KPI':
-            return renderKpiManagement(); // Correctly calls the implemented function
+            return renderKpiManagement(); 
         case 'Manager':
             // If Super Admin is viewing the Manager tab, set isSimulated=false
             return <ManagerDashboard user={user} onLogout={onLogout} isSimulated={!isSuperAdminManagerView} />;

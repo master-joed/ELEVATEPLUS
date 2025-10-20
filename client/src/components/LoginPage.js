@@ -16,7 +16,6 @@ function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      // Clean up the error message for the user
       let errorMessage = 'Invalid Email or Password. Please check your credentials.';
       setError(errorMessage);
     }
@@ -29,7 +28,7 @@ function LoginPage() {
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        backgroundColor: '#f8f9fa', // Light background
+        backgroundColor: '#f8f9fa', 
       }}
     >
       <Paper elevation={12} 
@@ -40,9 +39,8 @@ function LoginPage() {
           textAlign: 'center',
         }}
       >
-        {/* Placeholder for LTVplus Logo (replace with an image later) */}
         <Typography variant="h4" gutterBottom sx={{ color: '#007BFF', fontWeight: 'bold' }}>
-          LTVplus <span style={{ color: '#000000' }}>ELEVATEPLUS</span>
+          LTVplus <span style={{ color: '#333333' }}>ELEVATEPLUS</span>
         </Typography>
 
         <Typography variant="h6" gutterBottom sx={{ mb: 4, color: '#495057' }}>

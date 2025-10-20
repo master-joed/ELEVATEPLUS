@@ -2,7 +2,6 @@
 import React from 'react';
 import { Box, Tabs, Tab } from '@mui/material';
 
-// We use local state (instead of a router) to switch the view
 function AdminNav({ currentView, onViewChange }) {
   const handleChange = (event, newValue) => {
     onViewChange(newValue);

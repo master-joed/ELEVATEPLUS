@@ -1,25 +1,24 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-// Added query and where for fetching managers
 import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert } from '@mui/material';
 import AdminNav from './AdminNav';
-// Components used for Admin's simulation view
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
 function AdminDashboard({ user, onLogout }) {
-  // State to control which dashboard view the Admin is looking at
   const [currentView, setCurrentView] = useState('Admin'); 
-
-  // --- User Management State ---
   const [users, setUsers] = useState([]);
-  const [managers, setManagers] = useState([]); // <-- NEW STATE: Holds list of Managers
+  const [managers, setManagers] = useState([]); 
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Agent' });
   const [alertState, setAlertState] = useState({ type: '', message: '' });
+  
+  // --- Edit User State ---
+  const [editingUser, setEditingUser] = useState(null); 
+  const [isModalOpen, setIsModalOpen] = useState(false); 
 
   // Function to fetch all users and managers from Firestore
   const fetchUsers = async () => {
@@ -30,7 +29,6 @@ function AdminDashboard({ user, onLogout }) {
     // 2. Fetch only MANAGERS for the dropdown list
     const managersQuery = query(collection(db, 'users'), where('role', '==', 'Manager'));
     const managersSnapshot = await getDocs(managersQuery);
-    // Store manager UID (id) and their full name
     setManagers(managersSnapshot.docs.map(doc => ({ id: doc.id, fullName: doc.data().fullName })));
   };
 
@@ -41,7 +39,6 @@ function AdminDashboard({ user, onLogout }) {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
-    // Logic to handle manager ID selection and ensure role is 'Agent'
     if (name === 'managerId') {
       setNewUser(prev => ({ 
         ...prev, 
@@ -49,14 +46,12 @@ function AdminDashboard({ user, onLogout }) {
         [name]: value 
       }));
     } else if (name === 'role') {
-        // If role changes, clear managerId if it's no longer 'Agent'
         const updates = { [name]: value };
         if (value !== 'Agent') {
             updates.managerId = '';
         }
         setNewUser(prev => ({ ...prev, ...updates }));
     } else {
-        // Normal input update
         setNewUser(prev => ({ ...prev, [name]: value }));
     }
   };
@@ -66,7 +61,6 @@ function AdminDashboard({ user, onLogout }) {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
 
-    // Validation: Manager must be selected if the role is Agent
     if (newUser.role === 'Agent' && !newUser.managerId) {
         setAlertState({ type: 'error', message: 'Please select a manager for the new agent.' });
         return;
@@ -79,7 +73,6 @@ function AdminDashboard({ user, onLogout }) {
         fullName: newUser.fullName,
         role: newUser.role,
         email: newUser.email,
-        // CONDITIONAL FIELD: managerId is only included if the role is Agent
         ...(newUser.role === 'Agent' && newUser.managerId && { managerId: newUser.managerId }),
       };
       
@@ -115,10 +108,65 @@ function AdminDashboard({ user, onLogout }) {
       });
     }
   };
+  
+  // --- Core Logic: Edit User Functions ---
+  const handleOpenEdit = (userToEdit) => {
+    setEditingUser({
+      id: userToEdit.id,
+      fullName: userToEdit.fullName, 
+      email: userToEdit.email,       
+      role: userToEdit.role,
+      managerId: userToEdit.managerId || '', 
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    // Keep the name/email for display, update the role/managerId
+    setEditingUser(prev => ({ 
+        ...prev, 
+        [name]: value,
+        // If role is changed to Agent, ensure managerId is kept, otherwise clear it on role change
+        ...(name === 'role' && value !== 'Agent' && { managerId: '' }) 
+    }));
+  };
+  
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    setAlertState({ type: '', message: '' });
+
+    if (editingUser.role === 'Agent' && !editingUser.managerId) {
+      setAlertState({ type: 'error', message: 'Please select a manager for the agent.' });
+      return;
+    }
+
+    try {
+      const updates = {
+        role: editingUser.role,
+        ...(editingUser.role === 'Agent' && editingUser.managerId && { managerId: editingUser.managerId }),
+        ...(editingUser.role !== 'Agent' && { managerId: null }), 
+      };
+
+      const userRef = doc(db, 'users', editingUser.id);
+      await setDoc(userRef, updates, { merge: true }); 
+
+      setIsModalOpen(false);
+      setEditingUser(null);
+      await fetchUsers(); 
+
+      setAlertState({ 
+        type: 'success', 
+        message: `User ${editingUser.fullName} updated successfully!` 
+      });
+
+    } catch (error) {
+      setAlertState({ type: 'error', message: `Failed to update user: ${error.message}` });
+    }
+  };
 
   // --- FUNCTION TO RENDER THE SELECTED VIEW ---
   const renderDashboardView = () => {
-    // Note: When Admin views Manager/Agent dashboards, we pass an isSimulated prop
     if (currentView === 'Manager') {
         return <ManagerDashboard user={{ ...user, role: "Manager", fullName: "Admin (Manager View)" }} onLogout={onLogout} isSimulated={true} />;
     }
@@ -162,7 +210,7 @@ function AdminDashboard({ user, onLogout }) {
                             </Select>
                         </Grid>
                         
-                        {/* --- NEW: Manager Assignment Dropdown (Visible only for Agents) --- */}
+                        {/* Manager Assignment Dropdown */}
                         {newUser.role === 'Agent' && (
                             <Grid item xs={12} sm={3}>
                                 <Select
@@ -183,7 +231,6 @@ function AdminDashboard({ user, onLogout }) {
                                 </Select>
                             </Grid>
                         )}
-                        {/* The Add button needs to adjust its grid space depending on the dropdown */}
                         <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
                             <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
                         </Grid>
@@ -191,6 +238,7 @@ function AdminDashboard({ user, onLogout }) {
                 </form>
             </Box>
 
+            {/* --- MANAGE USERS TABLE --- */}
             <Box sx={{ my: 4 }}>
                 <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Manage Users</Typography>
                 <TableContainer component={Paper} elevation={3}>
@@ -200,6 +248,7 @@ function AdminDashboard({ user, onLogout }) {
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Full Name</TableCell>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell>
+                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -208,6 +257,11 @@ function AdminDashboard({ user, onLogout }) {
                                     <TableCell component="th" scope="row">{u.fullName}</TableCell>
                                     <TableCell>{u.email}</TableCell>
                                     <TableCell>{u.role}</TableCell>
+                                    <TableCell>
+                                        <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)}>
+                                            Edit
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -218,11 +272,13 @@ function AdminDashboard({ user, onLogout }) {
     );
   };
   
+  // The main return block for the Admin Dashboard component
   return (
     <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4" sx={{ color: 'primary.main', fontWeight: 'bold' }}>ELEVATEPLUS Admin</Typography>
         
+        {/* Header Buttons */}
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Typography variant="body1" sx={{ mr: 2, display: 'inline' }}>Logged in as: {user.fullName}</Typography>
           
@@ -239,6 +295,76 @@ function AdminDashboard({ user, onLogout }) {
       <AdminNav currentView={currentView} onViewChange={setCurrentView} />
 
       {renderDashboardView()}
+
+      {/* --- EDIT USER MODAL (POPUP FORM) --- */}
+      {isModalOpen && editingUser && (
+          <Box sx={{
+              position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+              backgroundColor: 'rgba(0, 0, 0, 0.5)', zIndex: 1000,
+              display: 'flex', justifyContent: 'center', alignItems: 'center'
+          }}>
+              <Paper elevation={24} sx={{ p: 4, width: 500, maxWidth: '90%', backgroundColor: 'background.paper' }}>
+                  <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>Edit User: {editingUser.fullName}</Typography>
+                  <form onSubmit={handleUpdateUser}>
+                      <Grid container spacing={3}>
+                          <Grid item xs={12}>
+                              <TextField label="Email (Read-Only)" value={editingUser.email} fullWidth disabled variant="filled" />
+                          </Grid>
+                          <Grid item xs={12}>
+                              <Select
+                                  label="Role"
+                                  name="role"
+                                  value={editingUser.role}
+                                  onChange={handleEditChange}
+                                  required
+                                  fullWidth
+                                  variant="outlined"
+                              >
+                                  <MenuItem value="Agent">Agent</MenuItem>
+                                  <MenuItem value="Manager">Manager</MenuItem>
+                                  <MenuItem value="Admin">Admin</MenuItem>
+                              </Select>
+                          </Grid>
+                          
+                          {/* Manager Assignment Dropdown (Conditional) */}
+                          {editingUser.role === 'Agent' && (
+                              <Grid item xs={12}>
+                                  <Select
+                                      label="Assign Manager"
+                                      name="managerId"
+                                      value={editingUser.managerId || ''}
+                                      onChange={handleEditChange}
+                                      required
+                                      fullWidth
+                                      variant="outlined"
+                                      displayEmpty
+                                  >
+                                      <MenuItem value="" disabled>Select Manager</MenuItem>
+                                      {managers.map((manager) => (
+                                          <MenuItem key={manager.id} value={manager.id}>
+                                              {manager.fullName}
+                                          </MenuItem>
+                                      ))}
+                                  </Select>
+                              </Grid>
+                          )}
+                          
+                          <Grid item xs={6}>
+                              <Button variant="outlined" color="secondary" fullWidth onClick={() => setIsModalOpen(false)}>
+                                  Cancel
+                              </Button>
+                          </Grid>
+                          <Grid item xs={6}>
+                              <Button type="submit" variant="contained" color="primary" fullWidth>
+                                  Save Changes
+                              </Button>
+                          </Grid>
+                      </Grid>
+                  </form>
+              </Paper>
+          </Box>
+      )}
+      {/* --- END MODAL --- */}
 
     </Container>
   );

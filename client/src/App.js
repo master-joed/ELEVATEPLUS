@@ -17,29 +17,26 @@ const lightTheme = createTheme({
   palette: {
     mode: 'light', 
     primary: {
-      // Vibrant blue from LTVplus logo
       main: '#007BFF', 
       light: '#4C9CFF',
       dark: '#0056b3',
       contrastText: '#FFFFFF', 
     },
     secondary: {
-      // Professional dark gray for secondary actions
       main: '#495057', 
       light: '#6c757d',
       dark: '#343a40',
       contrastText: '#FFFFFF',
     },
     background: {
-      default: '#f8f9fa', // Very light background
-      paper: '#ffffff',    // White for cards and tables
+      default: '#f8f9fa', 
+      paper: '#ffffff',    
     },
     success: {
-        main: '#28a745', // Standard green for success messages
+        main: '#28a745',
     }
   },
   typography: {
-    // Ensuring text is dark for contrast
     allVariants: {
       color: '#333333',
     },
@@ -56,10 +53,9 @@ function App() {
         const userDocRef = doc(db, "users", authUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
-          setUser({ ...authUser, ...userDoc.data() });
+          setUser({ ...authUser, uid: authUser.uid, ...userDoc.data() }); // Ensure uid is available
         } else {
-            // User exists in Auth but not in Firestore (e.g., new user whose role hasn't been set)
-            setUser({ ...authUser, role: 'Unassigned' });
+            setUser({ ...authUser, role: 'Unassigned', uid: authUser.uid });
         }
       } else {
         setUser(null);
@@ -90,7 +86,6 @@ function App() {
       case 'Agent':
         return <AgentDashboard user={user} onLogout={handleLogout} />;
       default:
-        // Show a message for users who signed up but don't have a role yet
         return (
           <div style={{ padding: '20px', textAlign: 'center' }}>
             <p style={{ color: '#333' }}>Access Restricted. Your account is pending role assignment from an administrator.</p>

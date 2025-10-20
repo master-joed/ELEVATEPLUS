@@ -2,7 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getFunctions } from "firebase/functions"; // Required for secure admin features
+import { getFunctions } from "firebase/functions"; 
 
 // IMPORTANT: Replace the placeholder object with the actual keys copied from your Firebase Console
 const firebaseConfig = {
@@ -21,4 +21,4 @@ const app = initializeApp(firebaseConfig);
 // Export the services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app); // Functions service for advanced features (if needed later)
+export const functions = getFunctions(app);

@@ -2,12 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-// --- CORRECTED MUI IMPORTS: All table components are now included ---
+// --- All necessary MUI components are imported here ---
 import { 
     Typography, Box, Grid, TextField, Button, Paper, Alert, 
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow 
 } from '@mui/material';
-// -------------------------------------------------------------------
+// -----------------------------------------------------------
 
 function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [kpiScores, setKpiScores] = useState({});
@@ -34,9 +34,13 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             }
             try {
                 // Fetch the master list of KPIs
-                const q = query(collection(db, 'kpis'), where('id', 'in', enabledKpis.map(k => k.id)));
+                const kpiIds = enabledKpis.map(k => k.id);
+                // Firestore limit: cannot use 'in' query with an empty array
+                if (kpiIds.length === 0) return; 
+
+                const q = query(collection(db, 'kpis'), where('id', 'in', kpiIds));
                 const snapshot = await getDocs(q);
-                const details = snapshot.docs.map(doc => doc.data());
+                const details = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setKpiDetails(details);
             } catch (error) {
                 console.error("Error fetching KPI details:", error);
@@ -58,14 +62,15 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
 
                 if (weight > 0) {
                     let normalizedScore = 0;
-                    // Simple normalization logic for demonstration: Score / Target
+                    
+                    // Simple normalization logic: Score / Target
                     if (kpi.type === 'Percentage' || kpi.type === 'Currency') {
                         normalizedScore = target > 0 ? (score / target) : 0;
                     } else if (kpi.type === 'Rating (1-5)') {
                         normalizedScore = score / 5; // Normalize rating to 0-1 scale
                     }
                     
-                    // Cap normalized score at 1.2 for over-performance to prevent skewing
+                    // Cap normalized score at 1.2 for over-performance
                     normalizedScore = Math.min(normalizedScore, 1.2); 
 
                     totalWeightedScore += normalizedScore * weight;
@@ -127,8 +132,10 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             // 3. Success and cleanup
             setAlert({ type: 'success', message: `Scores and Coaching Log saved successfully! Overall Score: ${overallScore}` });
             setActionPlan('');
-            // Call a function to refresh the team roster
-            fetchTeamData(); 
+            // Optional: Call a function to refresh the team roster
+            if (fetchTeamData) {
+                fetchTeamData();
+            }
 
         } catch (error) {
             console.error("Submission error:", error);
@@ -142,82 +149,88 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             
             {alert && <Alert severity={alert.type} sx={{ mb: 2 }}>{alert.message}</Alert>}
 
-            <form onSubmit={handleScoreSubmit}>
-                <TableContainer component={Paper} sx={{ mb: 4 }}>
-                    <Table size="small">
-                        <TableHead sx={{ backgroundColor: 'primary.light' }}>
-                            <TableRow>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>KPI</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Data Type</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Score Input</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Target</TableCell>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Weight (%)</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {kpiDetails.map((kpi) => (
-                                <TableRow key={kpi.id}>
-                                    <TableCell>{kpi.name}</TableCell>
-                                    <TableCell>{kpi.type}</TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            size="small"
-                                            type="number"
-                                            value={kpiScores[kpi.name] || ''}
-                                            onChange={(e) => setKpiScores({ ...kpiScores, [kpi.name]: e.target.value })}
-                                            required
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            size="small"
-                                            type="number"
-                                            value={targets[kpi.name] || ''}
-                                            onChange={(e) => setTargets({ ...targets, [kpi.name]: e.target.value })}
-                                            required
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <TextField
-                                            size="small"
-                                            type="number"
-                                            value={weights[kpi.name] || ''}
-                                            onChange={(e) => setWeights({ ...weights, [kpi.name]: e.target.value })}
-                                            required
-                                            inputProps={{ max: 100 }}
-                                        />
-                                    </TableCell>
+            {kpiDetails.length === 0 ? (
+                <Alert severity="warning">
+                    No KPIs are currently **Enabled** for the **{agent.campaignId}** campaign. Please contact an Admin.
+                </Alert>
+            ) : (
+                <form onSubmit={handleScoreSubmit}>
+                    <TableContainer component={Paper} sx={{ mb: 4 }}>
+                        <Table size="small">
+                            <TableHead sx={{ backgroundColor: 'primary.light' }}>
+                                <TableRow>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>KPI</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Data Type</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Score Input</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Target</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Weight (%)</TableCell>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                                {kpiDetails.map((kpi) => (
+                                    <TableRow key={kpi.id}>
+                                        <TableCell>{kpi.name}</TableCell>
+                                        <TableCell>{kpi.type}</TableCell>
+                                        <TableCell>
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                value={kpiScores[kpi.name] || ''}
+                                                onChange={(e) => setKpiScores({ ...kpiScores, [kpi.name]: e.target.value })}
+                                                required
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                value={targets[kpi.name] || ''}
+                                                onChange={(e) => setTargets({ ...targets, [kpi.name]: e.target.value })}
+                                                required
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                value={weights[kpi.name] || ''}
+                                                onChange={(e) => setWeights({ ...weights, [kpi.name]: e.target.value })}
+                                                required
+                                                inputProps={{ max: 100 }}
+                                            />
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
 
-                <Grid container spacing={3}>
-                    <Grid item xs={12} md={8}>
-                        <TextField
-                            label="Coaching Notes / Action Plan"
-                            multiline
-                            rows={4}
-                            fullWidth
-                            value={actionPlan}
-                            onChange={(e) => setActionPlan(e.target.value)}
-                            variant="outlined"
-                        />
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={8}>
+                            <TextField
+                                label="Coaching Notes / Action Plan"
+                                multiline
+                                rows={4}
+                                fullWidth
+                                value={actionPlan}
+                                onChange={(e) => setActionPlan(e.target.value)}
+                                variant="outlined"
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={4}>
+                            <Paper elevation={1} sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                                <Typography variant="h6">Overall Rating (1-5):</Typography>
+                                <Typography variant="h3" color={overallScore >= 4 ? 'success.main' : overallScore >= 3 ? 'warning.main' : 'error'}>
+                                    {overallScore || 'N/A'}
+                                </Typography>
+                                <Button type="submit" variant="contained" color="primary" fullWidth>
+                                    Submit Scores & Log
+                                </Button>
+                            </Paper>
+                        </Grid>
                     </Grid>
-                    <Grid item xs={12} md={4}>
-                        <Paper elevation={1} sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                            <Typography variant="h6">Overall Rating (1-5):</Typography>
-                            <Typography variant="h3" color={overallScore >= 4 ? 'success.main' : overallScore >= 3 ? 'warning.main' : 'error'}>
-                                {overallScore || 'N/A'}
-                            </Typography>
-                            <Button type="submit" variant="contained" color="primary" fullWidth>
-                                Submit Scores & Log
-                            </Button>
-                        </Paper>
-                    </Grid>
-                </Grid>
-            </form>
+                </form>
+            )}
         </Paper>
     );
 }

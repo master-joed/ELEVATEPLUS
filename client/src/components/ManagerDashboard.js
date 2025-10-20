@@ -1,7 +1,8 @@
 // src/components/ManagerDashboard.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore'; 
+// Note the removal of 'where' on the initial query, handled by compound queries later
+import { collection, query, getDocs, where, and } from 'firebase/firestore'; 
 
 import { 
     Container, Typography, Button, 
@@ -25,12 +26,12 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
         try {
             const userIsManagerOrSuperAdmin = user.role === 'Manager' || user.role === 'Super Admin';
             
-            // 1. Fetch Campaigns assigned to this user (or all campaigns for Admin sim)
+            // 1. Fetch Campaigns 
             const campaignsSnapshot = await getDocs(collection(db, 'campaigns'));
             const campaignList = campaignsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCampaigns(campaignList);
 
-            // 2. Fetch Campaign-KPI links (required for score entry)
+            // 2. Fetch Campaign-KPI links
             const campaignKpisSnapshot = await getDocs(collection(db, "campaignKpis"));
             const links = {};
             campaignKpisSnapshot.forEach(doc => {
@@ -40,32 +41,51 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
             });
             setCampaignKpis(links);
 
-            // Set default campaign selection (The Business Technology Solutions campaign is likely the first one created)
             const defaultCampaign = campaignList[0];
             if (defaultCampaign) {
                 setSelectedCampaign(defaultCampaign);
                 
-                // 3. Fetch Agents assigned to the manager's UID and the selected campaign
                 const managerUID = user.uid; 
                 
-                let agentsQuery = query(collection(db, 'users'), where('role', '==', 'Agent'));
+                let agentList = [];
                 
-                // FIX: Only apply the managerId filter if it's NOT a simulated view
+                // --- FIX: Fetch Agents AND Admins assigned to this Manager/SuperAdmin ---
+                
                 if (!isSimulated && userIsManagerOrSuperAdmin) {
-                    // Filter by manager's UID (which is the Super Admin UID in your case)
-                    agentsQuery = query(agentsQuery, where('managerId', '==', managerUID));
+                    
+                    // Firestore does not allow OR queries on different values for the same field (e.g., role == 'Agent' OR role == 'Admin').
+                    // We must execute two separate queries and merge the results.
+
+                    const baseFilter = [
+                        where('managerId', '==', managerUID),
+                        where('campaignId', '==', defaultCampaign.id)
+                    ];
+                    
+                    // Query 1: Get all assigned AGENTS
+                    const agentsQuery = query(
+                        collection(db, 'users'),
+                        where('role', '==', 'Agent'),
+                        ...baseFilter
+                    );
+
+                    // Query 2: Get all assigned ADMINS (IT Team members)
+                    const adminsQuery = query(
+                        collection(db, 'users'),
+                        where('role', '==', 'Admin'),
+                        ...baseFilter
+                    );
+                    
+                    const [agentsSnapshot, adminsSnapshot] = await Promise.all([
+                        getDocs(agentsQuery),
+                        getDocs(adminsQuery)
+                    ]);
+                    
+                    agentList = [
+                        ...agentsSnapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data(), overallScore: 'N/A' })),
+                        ...adminsSnapshot.docs.map(doc => ({ id: doc.id, uid: doc.id, ...doc.data(), overallScore: 'N/A' }))
+                    ];
                 }
                 
-                // Filter by selected campaign (All agents should have a campaignId)
-                agentsQuery = query(agentsQuery, where('campaignId', '==', defaultCampaign.id));
-
-                const snapshot = await getDocs(agentsQuery);
-                const agentList = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    uid: doc.id,
-                    ...doc.data(),
-                    overallScore: 'N/A' 
-                }));
                 setAgents(agentList);
             }
         } catch (error) {
@@ -73,10 +93,10 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
         } finally {
             setIsLoading(false);
         }
-    }, [isSimulated, user.campaignId, user.uid, user.role]); // Dependency added for user.role
+    }, [isSimulated, user.campaignId, user.uid, user.role]); 
 
     useEffect(() => {
-        if (user && user.uid && user.role !== 'Admin') { // Only run fetch for Managers or Super Admins
+        if (user && user.uid && user.role !== 'Admin') { 
             fetchAllManagerData();
         } else if (isSimulated) {
             setIsLoading(false);
@@ -85,9 +105,9 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
     }, [user, isSimulated, fetchAllManagerData]);
 
     const handleCampaignChange = (campaignId) => {
+        // TODO: Re-fetch agents assigned to this manager/campaign upon selection
         const campaign = campaigns.find(c => c.id === campaignId);
         setSelectedCampaign(campaign);
-        // Note: For a production app, you would re-run fetchAllManagerData here
     };
 
     // --- RENDER CONTENT ---
@@ -153,7 +173,8 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                     <Table>
                         <TableHead sx={{ backgroundColor: 'primary.light' }}>
                             <TableRow>
-                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Agent Name</TableCell>
+                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Agent/Admin Name</TableCell> {/* UPDATED */}
+                                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell> {/* NEW */}
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Campaign</TableCell>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Overall Score (1-5)</TableCell>
                                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
@@ -163,6 +184,7 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                             {agents.map((agent) => (
                                 <TableRow key={agent.id}>
                                     <TableCell component="th" scope="row">{agent.fullName || agent.email}</TableCell>
+                                    <TableCell>{agent.role}</TableCell> {/* NEW */}
                                     <TableCell>{selectedCampaign?.name}</TableCell>
                                     <TableCell>
                                         <Typography color={agent.overallScore >= 4 ? 'success.main' : agent.overallScore >= 3 ? 'warning.main' : 'error'}>

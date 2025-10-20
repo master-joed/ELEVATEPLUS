@@ -22,11 +22,9 @@ function AdminDashboard({ user, onLogout }) {
 
   // Function to fetch all users and managers from Firestore
   const fetchUsers = async () => {
-    // 1. Fetch ALL users for the table display
     const usersCollection = await getDocs(collection(db, "users"));
     setUsers(usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     
-    // 2. Fetch only MANAGERS for the dropdown list
     const managersQuery = query(collection(db, 'users'), where('role', '==', 'Manager'));
     const managersSnapshot = await getDocs(managersQuery);
     setManagers(managersSnapshot.docs.map(doc => ({ id: doc.id, fullName: doc.data().fullName })));
@@ -123,7 +121,6 @@ function AdminDashboard({ user, onLogout }) {
 
   const handleEditChange = (e) => {
     const { name, value } = e.target;
-    // Keep the name/email for display, update the role/managerId
     setEditingUser(prev => ({ 
         ...prev, 
         [name]: value,
@@ -213,14 +210,15 @@ function AdminDashboard({ user, onLogout }) {
                         {/* Manager Assignment Dropdown */}
                         {newUser.role === 'Agent' && (
                             <Grid item xs={12} sm={3}>
-                                <Select
+                                <TextField
+                                    select
+                                    label="Select Manager"
                                     name="managerId"
                                     value={newUser.managerId || ''}
                                     onChange={handleInputChange}
                                     required
                                     fullWidth
                                     variant="outlined"
-                                    displayEmpty
                                 >
                                     <MenuItem value="" disabled>Select Manager</MenuItem>
                                     {managers.map((manager) => (
@@ -228,7 +226,7 @@ function AdminDashboard({ user, onLogout }) {
                                             {manager.fullName}
                                         </MenuItem>
                                     ))}
-                                </Select>
+                                </TextField>
                             </Grid>
                         )}
                         <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
@@ -307,11 +305,21 @@ function AdminDashboard({ user, onLogout }) {
                   <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>Edit User: {editingUser.fullName}</Typography>
                   <form onSubmit={handleUpdateUser}>
                       <Grid container spacing={3}>
+                          {/* 1. EMAIL FIELD (Read-Only) */}
                           <Grid item xs={12}>
-                              <TextField label="Email (Read-Only)" value={editingUser.email} fullWidth disabled variant="filled" />
+                              <TextField 
+                                  label="Email" 
+                                  value={editingUser.email} 
+                                  fullWidth 
+                                  disabled 
+                                  variant="filled" 
+                              />
                           </Grid>
+                          
+                          {/* 2. ROLE DROPDOWN */}
                           <Grid item xs={12}>
-                              <Select
+                              <TextField
+                                  select
                                   label="Role"
                                   name="role"
                                   value={editingUser.role}
@@ -323,13 +331,14 @@ function AdminDashboard({ user, onLogout }) {
                                   <MenuItem value="Agent">Agent</MenuItem>
                                   <MenuItem value="Manager">Manager</MenuItem>
                                   <MenuItem value="Admin">Admin</MenuItem>
-                              </Select>
+                              </TextField>
                           </Grid>
                           
-                          {/* Manager Assignment Dropdown (Conditional) */}
+                          {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) */}
                           {editingUser.role === 'Agent' && (
                               <Grid item xs={12}>
-                                  <Select
+                                  <TextField
+                                      select
                                       label="Assign Manager"
                                       name="managerId"
                                       value={editingUser.managerId || ''}
@@ -337,7 +346,9 @@ function AdminDashboard({ user, onLogout }) {
                                       required
                                       fullWidth
                                       variant="outlined"
-                                      displayEmpty
+                                      SelectProps={{
+                                          displayEmpty: true,
+                                      }}
                                   >
                                       <MenuItem value="" disabled>Select Manager</MenuItem>
                                       {managers.map((manager) => (
@@ -345,10 +356,11 @@ function AdminDashboard({ user, onLogout }) {
                                               {manager.fullName}
                                           </MenuItem>
                                       ))}
-                                  </Select>
+                                  </TextField>
                               </Grid>
                           )}
                           
+                          {/* 4. ACTION BUTTONS (FIXED COLORS) */}
                           <Grid item xs={6}>
                               <Button variant="outlined" color="secondary" fullWidth onClick={() => setIsModalOpen(false)}>
                                   Cancel

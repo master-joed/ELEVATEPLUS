@@ -1,23 +1,36 @@
 // src/components/ManagerDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+// Added query and where for filtering agents
+import { collection, getDocs, query, where } from 'firebase/firestore'; 
 
-// Import MUI components for styling
 import { Container, Typography, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Grid, Alert } from '@mui/material';
 
-function ManagerDashboard({ user, onLogout }) {
+function ManagerDashboard({ user, onLogout, isSimulated }) { // isSimulated prop added
     const [agents, setAgents] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
 
-    // --- Core Logic: Fetch only Agents from Firestore ---
+    // --- Core Logic: Fetch only Assigned Agents from Firestore ---
     useEffect(() => {
         const fetchAgents = async () => {
             setIsLoading(true);
             try {
-                // Query Firestore to get only documents where role is 'Agent'
-                const agentsQuery = query(collection(db, 'users'), where('role', '==', 'Agent'));
+                // Get the logged-in manager's UID (which is the user's document ID in Firestore)
+                const managerUID = user.uid; 
+                
+                // If the view is simulated by the Admin, or the UID is missing, don't fetch.
+                if (isSimulated || !managerUID) {
+                     setAgents([]); 
+                     return;
+                }
+
+                // Query Firestore: Get documents where role is 'Agent' AND managerId matches the manager's UID
+                const agentsQuery = query(
+                    collection(db, 'users'), 
+                    where('role', '==', 'Agent'),
+                    where('managerId', '==', managerUID) // CRUCIAL FILTER: Only assigned agents
+                );
                 const snapshot = await getDocs(agentsQuery);
                 
                 const agentList = snapshot.docs.map(doc => ({
@@ -30,14 +43,20 @@ function ManagerDashboard({ user, onLogout }) {
                 }));
                 setAgents(agentList);
             } catch (error) {
-                console.error("Error fetching agents:", error);
+                console.error("Error fetching assigned agents:", error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchAgents();
-    }, []);
+        if (user && user.uid && !isSimulated) { 
+            fetchAgents();
+        } else if (isSimulated) {
+            // For Admin simulation: set loading state to false immediately
+            setIsLoading(false);
+            setAgents([]);
+        }
+    }, [user, isSimulated]); 
     
     // --- Render Content ---
 
@@ -72,7 +91,6 @@ function ManagerDashboard({ user, onLogout }) {
                         </Paper>
                     </Grid>
                 </Grid>
-
             </Container>
         );
     }
@@ -84,14 +102,24 @@ function ManagerDashboard({ user, onLogout }) {
                 <Typography variant="h4" sx={{ color: 'primary.main', fontWeight: 'bold' }}>Manager Dashboard</Typography>
                 <Box>
                     <Typography variant="body1" sx={{ mr: 2, display: 'inline' }}>Team Lead: {user.fullName}</Typography>
-                    <Button variant="contained" color="secondary" onClick={onLogout}>Logout</Button>
+                    {!isSimulated && <Button variant="contained" color="secondary" onClick={onLogout}>Logout</Button>}
                 </Box>
             </Box>
             
             <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>Your Team Roster</Typography>
             
-            {isLoading ? (
-                <Alert severity="info">Loading agents...</Alert>
+            {isSimulated && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                    This is the **Admin's Simulated Manager View**. No real agent data is loaded.
+                </Alert>
+            )}
+
+            {isLoading && !isSimulated ? (
+                <Alert severity="info">Loading assigned agents...</Alert>
+            ) : agents.length === 0 && !isSimulated ? (
+                <Alert severity="warning">You have no agents assigned. Please ask an Admin to assign agents to you.</Alert>
+            ) : agents.length === 0 && isSimulated ? (
+                 <Alert severity="info">Simulated View: Agent list is empty.</Alert>
             ) : (
                 <TableContainer component={Paper} elevation={3}>
                     <Table>

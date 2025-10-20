@@ -1,16 +1,15 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, setDoc, doc } from "firebase/firestore";
+// Added query and where for fetching managers
+import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert } from '@mui/material';
 import AdminNav from './AdminNav';
-
-// --- FIX: ADD MISSING IMPORTS ---
+// Components used for Admin's simulation view
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
-// ---------------------------------
 
 function AdminDashboard({ user, onLogout }) {
   // State to control which dashboard view the Admin is looking at
@@ -18,13 +17,21 @@ function AdminDashboard({ user, onLogout }) {
 
   // --- User Management State ---
   const [users, setUsers] = useState([]);
+  const [managers, setManagers] = useState([]); // <-- NEW STATE: Holds list of Managers
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Agent' });
   const [alertState, setAlertState] = useState({ type: '', message: '' });
 
-  // Function to fetch all users from Firestore
+  // Function to fetch all users and managers from Firestore
   const fetchUsers = async () => {
+    // 1. Fetch ALL users for the table display
     const usersCollection = await getDocs(collection(db, "users"));
     setUsers(usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    
+    // 2. Fetch only MANAGERS for the dropdown list
+    const managersQuery = query(collection(db, 'users'), where('role', '==', 'Manager'));
+    const managersSnapshot = await getDocs(managersQuery);
+    // Store manager UID (id) and their full name
+    setManagers(managersSnapshot.docs.map(doc => ({ id: doc.id, fullName: doc.data().fullName })));
   };
 
   useEffect(() => {
@@ -32,7 +39,26 @@ function AdminDashboard({ user, onLogout }) {
   }, []);
 
   const handleInputChange = (e) => {
-    setNewUser({ ...newUser, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // Logic to handle manager ID selection and ensure role is 'Agent'
+    if (name === 'managerId') {
+      setNewUser(prev => ({ 
+        ...prev, 
+        role: 'Agent',
+        [name]: value 
+      }));
+    } else if (name === 'role') {
+        // If role changes, clear managerId if it's no longer 'Agent'
+        const updates = { [name]: value };
+        if (value !== 'Agent') {
+            updates.managerId = '';
+        }
+        setNewUser(prev => ({ ...prev, ...updates }));
+    } else {
+        // Normal input update
+        setNewUser(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   // --- Core Logic: Add New User ---
@@ -40,18 +66,25 @@ function AdminDashboard({ user, onLogout }) {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
 
+    // Validation: Manager must be selected if the role is Agent
+    if (newUser.role === 'Agent' && !newUser.managerId) {
+        setAlertState({ type: 'error', message: 'Please select a manager for the new agent.' });
+        return;
+    }
+    
     try {
-      // 1. Create the new user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
       
-      // 2. Create the user document in Firestore to store their role
-      await setDoc(doc(db, "users", userCredential.user.uid), {
+      const userData = {
         fullName: newUser.fullName,
         role: newUser.role,
         email: newUser.email,
-      });
+        // CONDITIONAL FIELD: managerId is only included if the role is Agent
+        ...(newUser.role === 'Agent' && newUser.managerId && { managerId: newUser.managerId }),
+      };
+      
+      await setDoc(doc(db, "users", userCredential.user.uid), userData); 
 
-      // 3. IMPORTANT: Sign the new user out immediately (required for Spark Plan)
       await auth.signOut();
       
       setAlertState({ 
@@ -85,16 +118,15 @@ function AdminDashboard({ user, onLogout }) {
 
   // --- FUNCTION TO RENDER THE SELECTED VIEW ---
   const renderDashboardView = () => {
+    // Note: When Admin views Manager/Agent dashboards, we pass an isSimulated prop
     if (currentView === 'Manager') {
-        // Renders a simulated Manager View
-        return <ManagerDashboard user={{ fullName: "Admin (Manager View)", role: "Manager" }} onLogout={onLogout} />;
+        return <ManagerDashboard user={{ ...user, role: "Manager", fullName: "Admin (Manager View)" }} onLogout={onLogout} isSimulated={true} />;
     }
     if (currentView === 'Agent') {
-        // Renders a simulated Agent View
-        return <AgentDashboard user={{ fullName: "Admin (Agent View)", role: "Agent" }} onLogout={onLogout} />;
+        return <AgentDashboard user={{ ...user, role: "Agent", fullName: "Admin (Agent View)" }} onLogout={onLogout} isSimulated={true} />;
     }
 
-    // Default: Render the Admin Tools view
+    // Default: Admin Tools view
     return (
         <Container 
             component={Paper} 
@@ -103,14 +135,12 @@ function AdminDashboard({ user, onLogout }) {
         >
             <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>User Management Tools</Typography>
             
-            {/* --- Alert Messages --- */}
             {alertState.message && (
                 <Alert severity={alertState.type} sx={{ mt: 2, mb: 2 }}>
                     {alertState.message}
                 </Alert>
             )}
 
-            {/* --- ADD NEW USER SECTION --- */}
             <Box sx={{ my: 4, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
                 <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
                 <form onSubmit={handleAddUser}>
@@ -125,20 +155,42 @@ function AdminDashboard({ user, onLogout }) {
                         <TextField label="Password" name="password" type="password" value={newUser.password} onChange={handleInputChange} required fullWidth variant="outlined"/>
                         </Grid>
                         <Grid item xs={12} sm={2}>
-                        <Select name="role" value={newUser.role} onChange={handleInputChange} required fullWidth variant="outlined">
-                            <MenuItem value="Agent">Agent</MenuItem>
-                            <MenuItem value="Manager">Manager</MenuItem>
-                            <MenuItem value="Admin">Admin</MenuItem>
-                        </Select>
+                            <Select name="role" value={newUser.role} onChange={handleInputChange} required fullWidth variant="outlined">
+                                <MenuItem value="Agent">Agent</MenuItem>
+                                <MenuItem value="Manager">Manager</MenuItem>
+                                <MenuItem value="Admin">Admin</MenuItem>
+                            </Select>
                         </Grid>
-                        <Grid item xs={12} sm={1}>
-                        <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
+                        
+                        {/* --- NEW: Manager Assignment Dropdown (Visible only for Agents) --- */}
+                        {newUser.role === 'Agent' && (
+                            <Grid item xs={12} sm={3}>
+                                <Select
+                                    name="managerId"
+                                    value={newUser.managerId || ''}
+                                    onChange={handleInputChange}
+                                    required
+                                    fullWidth
+                                    variant="outlined"
+                                    displayEmpty
+                                >
+                                    <MenuItem value="" disabled>Select Manager</MenuItem>
+                                    {managers.map((manager) => (
+                                        <MenuItem key={manager.id} value={manager.id}>
+                                            {manager.fullName}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </Grid>
+                        )}
+                        {/* The Add button needs to adjust its grid space depending on the dropdown */}
+                        <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
+                            <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
                         </Grid>
                     </Grid>
                 </form>
             </Box>
 
-            {/* --- MANAGE USERS TABLE --- */}
             <Box sx={{ my: 4 }}>
                 <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Manage Users</Typography>
                 <TableContainer component={Paper} elevation={3}>
@@ -166,13 +218,11 @@ function AdminDashboard({ user, onLogout }) {
     );
   };
   
-  // The main return block for the Admin Dashboard component
   return (
     <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4" sx={{ color: 'primary.main', fontWeight: 'bold' }}>ELEVATEPLUS Admin</Typography>
         
-        {/* --- Header Buttons --- */}
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Typography variant="body1" sx={{ mr: 2, display: 'inline' }}>Logged in as: {user.fullName}</Typography>
           

@@ -1,5 +1,5 @@
 // client/src/components/AdminDashboard.js
-import React, { useState, useEffect } => 'react';
+import React, { useState, useEffect } from 'react'; // <-- Ensure useState and useEffect are here
 import { db, auth } from '../firebase';
 import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
@@ -8,6 +8,7 @@ import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
+// --- THE FIX: Ensure correct function definition syntax ---
 function AdminDashboard({ user, onLogout }) {
   const [currentView, setCurrentView] = useState('Admin'); 
   const [users, setUsers] = useState([]);
@@ -19,8 +20,8 @@ function AdminDashboard({ user, onLogout }) {
   const [isModalOpen, setIsModalOpen] = useState(false); 
   
   // --- Campaign/KPI States (Placeholder) ---
-  const [campaigns] = useState([]); // Placeholder for campaign data
-  const [allKpis] = useState([]); // Placeholder for KPI data
+  const [campaigns] = useState([]); 
+  const [allKpis] = useState([]); 
   const [selectedCampaignId] = useState('');
 
   // Function to fetch all users and managers (Super Admin, Admin, Manager)
@@ -162,9 +163,7 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // --- RENDERING FUNCTIONS ---
-  
-  // Placeholder for KPI management tab (will be implemented next)
+  // Placeholder for KPI management tab
   const renderKpiManagement = () => (
     <Container component={Paper} elevation={3} sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}>
         <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>
@@ -175,7 +174,7 @@ function AdminDashboard({ user, onLogout }) {
         </Alert>
     </Container>
   );
-
+  
   const renderUserManagement = () => (
     <Container 
         component={Paper} 
@@ -273,9 +272,10 @@ function AdminDashboard({ user, onLogout }) {
                             </TableRow>
                         ))}
                     </TableBody>
-                </TableContainer>
-            </Box>
-        </Container>
+                </Table>
+            </TableContainer>
+        </Box>
+    </Container>
   );
 
   const renderView = () => {

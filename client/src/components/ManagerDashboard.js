@@ -56,6 +56,7 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
 
                 // 3. Fetch Agents (Admins/Agents) assigned to the selected campaign
                 if (!isSimulated) {
+                    // Filter users belonging to the campaign AND assigned to this manager's UID
                     const usersQuery = query(collection(db, 'users'), where('campaignId', '==', campaignToLoad.id));
                     const snapshot = await getDocs(usersQuery);
 
@@ -79,27 +80,24 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
         }
     }, [isSimulated, user.uid, user.role, selectedCampaign]); 
 
-    // Initial fetch on component mount and when user changes
+    // Initial fetch on component mount
     useEffect(() => {
         if (user && user.uid && (user.role === 'Manager' || user.role === 'Super Admin')) { 
-            // FIX: Only call with a campaign ID if one is already selected, preventing initial state loop
             fetchAllManagerData(selectedCampaign?.id); 
         } else if (isSimulated) {
             setIsLoading(false);
             setAgents([]);
         }
-    }, [user, isSimulated]); // Removed fetchAllManagerData and selectedCampaign from deps array
+    }, [user, isSimulated]); 
 
     // Handler for campaign dropdown change
     const handleCampaignChange = (campaignId) => {
-        const campaign = campaigns.find(c => c.id === campaignId);
-        // FIX: Rerun the entire fetch process with the new campaign ID
+        // FIX: Re-run the entire fetch process with the new campaign ID
         fetchAllManagerData(campaignId); 
     };
 
     // --- RENDER CONTENT ---
     if (selectedAgent) {
-        // ... (Render Coach Agent Form) ...
         return (
             <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
                 <Typography variant="h4" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold', mb: 4 }}>
@@ -112,7 +110,7 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                 <AgentScoreForm 
                     agent={selectedAgent} 
                     campaignKpis={campaignKpis} 
-                    fetchTeamData={() => fetchAllManagerData(selectedCampaign?.id)} // Rerun fetch on submit
+                    fetchTeamData={() => fetchAllManagerData(selectedCampaign?.id)} 
                 />
             </Container>
         );

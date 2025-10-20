@@ -1,17 +1,16 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, setDoc, doc, query, where, updateDoc } from "firebase/firestore"; 
+// Added addDoc and updateDoc for campaign/KPI functionality
+import { collection, getDocs, setDoc, doc, query, where, addDoc, updateDoc } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
-import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab } from '@mui/material';
+import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab, Switch, FormControl, InputLabel } from '@mui/material';
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
 function AdminDashboard({ user, onLogout }) {
-  // Set initial view to Admin, or Manager if the user is a Super Admin who also manages a campaign
-  const initialView = user.role === 'Super Admin' && user.campaignId ? 'Manager' : 'Admin';
-  const [currentView, setCurrentView] = useState(initialView); 
+  const [currentView, setCurrentView] = useState('KPI'); 
   const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]); 
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Agent', campaignId: '' }); 
@@ -22,15 +21,19 @@ function AdminDashboard({ user, onLogout }) {
   
   // --- Campaign/KPI States ---
   const [campaigns, setCampaigns] = useState([]);
-  const [allKpis] = useState([]); 
+  const [allKpis, setAllKpis] = useState([]);
+  const [campaignKpis, setCampaignKpis] = useState({}); 
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
+  const [newKpi, setNewKpi] = useState({ name: '', type: 'Percentage' });
+  const [newCampaignName, setNewCampaignName] = useState('');
+  const [newCampaignDescription, setNewCampaignDescription] = useState('');
   
   // --- ROLE CHECKS ---
   const isSuperAdmin = user.role === 'Super Admin';
   const canManageCampaigns = isSuperAdmin || user.role === 'Admin';
 
 
-  // Function to fetch all data
+  // --- CORE DATA FETCHING ---
   const fetchAllData = async () => {
     // 1. Fetch Users and Managers
     const usersCollection = await getDocs(collection(db, "users"));
@@ -42,8 +45,29 @@ function AdminDashboard({ user, onLogout }) {
 
     // 2. Fetch Campaigns
     const campaignsSnapshot = await getDocs(collection(db, "campaigns"));
+    // Note: doc.id is used as campaignId because Firestore auto-generates it.
     const campaignList = campaignsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), docId: doc.id }));
     setCampaigns(campaignList);
+    // Set the first campaign as selected by default
+    if (!selectedCampaignId && campaignList.length > 0) {
+        setSelectedCampaignId(campaignList[0].id);
+    }
+
+    // 3. Fetch Master KPIs
+    const kpisSnapshot = await getDocs(collection(db, "kpis"));
+    setAllKpis(kpisSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+    // 4. Fetch Campaign-KPI Links
+    const campaignKpisSnapshot = await getDocs(collection(db, "campaignKpis"));
+    const links = {};
+    campaignKpisSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (!links[data.campaignId]) {
+            links[data.campaignId] = {};
+        }
+        links[data.campaignId][data.kpiId] = { docId: doc.id, isEnabled: data.isEnabled };
+    });
+    setCampaignKpis(links);
   };
 
   useEffect(() => {
@@ -66,7 +90,78 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // --- Core Logic: Add New User (Super Admin Only) ---
+  // --- CORE LOGIC: CAMPAIGN/KPI ACTIONS ---
+  const handleAddCampaign = async (e) => {
+    e.preventDefault();
+    if (!newCampaignName.trim()) return;
+
+    try {
+        await addDoc(collection(db, "campaigns"), { 
+            name: newCampaignName.trim(), 
+            description: newCampaignDescription.trim() 
+        });
+        setNewCampaignName('');
+        setNewCampaignDescription('');
+        await fetchAllData();
+        setAlertState({ type: 'success', message: `Campaign '${newCampaignName}' created.` });
+    } catch (error) {
+        setAlertState({ type: 'error', message: `Failed to add campaign: ${error.message}` });
+    }
+  };
+
+  const handleAddMasterKpi = async (e) => {
+    e.preventDefault();
+    if (!newKpi.name.trim()) return;
+
+    try {
+        const kpiId = newKpi.name.toUpperCase().replace(/\s/g, '_');
+        await setDoc(doc(db, "kpis", kpiId), { 
+            name: newKpi.name.trim(), 
+            type: newKpi.type 
+        });
+        setNewKpi({ name: '', type: 'Percentage' });
+        await fetchAllData();
+        setAlertState({ type: 'success', message: `${newKpi.name} added to master KPI list.` });
+    } catch (error) {
+        setAlertState({ type: 'error', message: `Failed to add KPI: ${error.message}` });
+    }
+  };
+
+  const handleToggleKpi = async (kpiId, isChecked) => {
+    const campaignId = selectedCampaignId;
+    const linkQuery = query(
+        collection(db, 'campaignKpis'), 
+        where('campaignId', '==', campaignId),
+        where('kpiId', '==', kpiId)
+    );
+    const snapshot = await getDocs(linkQuery);
+
+    try {
+        if (isChecked) {
+            if (snapshot.empty) {
+                await addDoc(collection(db, 'campaignKpis'), { // Use addDoc for auto-ID
+                    campaignId: campaignId,
+                    kpiId: kpiId,
+                    isEnabled: true,
+                });
+            } else {
+                const docRef = doc(db, 'campaignKpis', snapshot.docs[0].id);
+                await updateDoc(docRef, { isEnabled: true });
+            }
+        } else {
+            if (!snapshot.empty) {
+                 const docRef = doc(db, 'campaignKpis', snapshot.docs[0].id);
+                 await updateDoc(docRef, { isEnabled: false });
+            }
+        }
+        await fetchAllData(); 
+        setAlertState({ type: 'success', message: `KPI toggled successfully.` });
+    } catch (error) {
+        setAlertState({ type: 'error', message: `Failed to toggle KPI: ${error.message}` });
+    }
+  };
+  
+  // --- CORE LOGIC: USER ACTIONS ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
@@ -189,7 +284,8 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  // Placeholder for KPI management tab
+  // --- KPI MANAGEMENT RENDERING FUNCTION (FULLY IMPLEMENTED) ---
+  
   const renderKpiManagement = () => {
     const currentCampaign = campaigns.find(c => c.id === selectedCampaignId);
     
@@ -197,13 +293,123 @@ function AdminDashboard({ user, onLogout }) {
         <Container component={Paper} elevation={3} sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}>
             <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>Campaign & KPI Management</Typography>
             
-            {/* ... (Implementation of KPI management logic) ... */}
-            <Alert severity="info">
-                The full KPI management functionality is waiting to be built in this section.
-            </Alert>
+            {/* --- Alert Messages for KPI Tab --- */}
+            {alertState.message && (
+                <Alert severity={alertState.type} sx={{ mt: 2, mb: 2 }}>
+                    {alertState.message}
+                </Alert>
+            )}
+
+            <Grid container spacing={4} sx={{ mt: 2 }}>
+                
+                {/* --- 1. Create New Campaign --- */}
+                <Grid item xs={12} md={6}>
+                    <Paper elevation={1} sx={{ p: 3 }}>
+                        <Typography variant="h6" gutterBottom color="secondary.dark">Create New Campaign/Team</Typography>
+                        <form onSubmit={handleAddCampaign}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12}>
+                                    <TextField label="Campaign Name (e.g., IT Team Support)" value={newCampaignName} onChange={(e) => setNewCampaignName(e.target.value)} fullWidth variant="outlined" required/>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <TextField label="Description" value={newCampaignDescription} onChange={(e) => setNewCampaignDescription(e.target.value)} fullWidth variant="outlined"/>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button type="submit" variant="contained" color="secondary" fullWidth>
+                                        Add Campaign
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </form>
+                    </Paper>
+                </Grid>
+                
+                {/* --- 2. Add New Master KPI --- */}
+                <Grid item xs={12} md={6}>
+                    <Paper elevation={1} sx={{ p: 3 }}>
+                        <Typography variant="h6" gutterBottom color="secondary.dark">Add New Master KPI</Typography>
+                        <form onSubmit={handleAddMasterKpi}>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} sm={6}>
+                                    <TextField label="KPI Name (e.g., AHT, CSAT)" value={newKpi.name} onChange={(e) => setNewKpi({ ...newKpi, name: e.target.value })} fullWidth variant="outlined" required/>
+                                </Grid>
+                                <Grid item xs={12} sm={6}>
+                                    <TextField select label="Data Type" value={newKpi.type} onChange={(e) => setNewKpi({ ...newKpi, type: e.target.value })} fullWidth variant="outlined" required>
+                                        <MenuItem value="Percentage">Percentage</MenuItem>
+                                        <MenuItem value="Rating (1-5)">Rating (1-5)</MenuItem>
+                                        <MenuItem value="Time (HH:MM)">Time (HH:MM)</MenuItem>
+                                        <MenuItem value="Currency">Currency (Sales)</MenuItem>
+                                    </TextField>
+                                </Grid>
+                                <Grid item xs={12}>
+                                    <Button type="submit" variant="contained" color="primary" fullWidth>
+                                        Add Master KPI
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </form>
+                    </Paper>
+                </Grid>
+            </Grid>
+            
+            {/* --- 3. KPI Toggle List --- */}
+            <Box sx={{ mt: 5, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+                <Typography variant="h5" gutterBottom color="primary.dark" sx={{mb: 3}}>
+                    Enable/Disable KPIs for Campaign
+                </Typography>
+                 
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                    <InputLabel id="campaign-select-label">Select Campaign</InputLabel>
+                    <Select labelId="campaign-select-label" label="Select Campaign" value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)} fullWidth disabled={campaigns.length === 0}>
+                        {campaigns.map((camp) => (
+                            <MenuItem key={camp.id} value={camp.id}>
+                                {camp.name}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                {selectedCampaignId && (
+                    <TableContainer component={Paper} elevation={3}>
+                        <Table>
+                            <TableHead sx={{ backgroundColor: 'primary.light' }}>
+                                <TableRow>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>KPI Name</TableCell>
+                                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Data Type</TableCell>
+                                    <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Enabled</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {allKpis.map((kpi) => {
+                                    const link = campaignKpis[selectedCampaignId]?.[kpi.id];
+                                    const isEnabled = link?.isEnabled || false;
+
+                                    return (
+                                        <TableRow key={kpi.id}>
+                                            <TableCell>{kpi.name}</TableCell>
+                                            <TableCell>{kpi.type}</TableCell>
+                                            <TableCell align="center">
+                                                <Switch
+                                                    checked={isEnabled}
+                                                    onChange={(e) => handleToggleKpi(kpi.id, e.target.checked)}
+                                                    color="success"
+                                                />
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
+                {!selectedCampaignId && campaigns.length > 0 && (
+                    <Alert severity="info">Please select a campaign to manage its KPIs.</Alert>
+                )}
+                {campaigns.length === 0 && <Alert severity="warning">Please create a campaign first.</Alert>}
+            </Box>
         </Container>
     );
-  };
+};
   
   const renderUserManagement = () => {
     return (
@@ -352,14 +558,13 @@ function AdminDashboard({ user, onLogout }) {
   };
 
   const renderView = () => {
-    // Check if Super Admin is viewing the Manager Tab and allow real access
     const isSuperAdminManagerView = user.role === 'Super Admin' && currentView === 'Manager';
     
     switch(currentView) {
         case 'Admin':
             return renderUserManagement();
         case 'KPI':
-            return renderKpiManagement(); // Renders the placeholder function
+            return renderKpiManagement(); // Correctly calls the implemented function
         case 'Manager':
             // If Super Admin is viewing the Manager tab, set isSimulated=false
             return <ManagerDashboard user={user} onLogout={onLogout} isSimulated={!isSuperAdminManagerView} />;

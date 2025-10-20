@@ -1,24 +1,23 @@
-// src/components/AdminDashboard.js
+// client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, setDoc, doc } from "firebase/firestore";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
+// ^--- sendPasswordResetEmail is required for the new feature
 
-// Import all required components
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert } from '@mui/material';
-import AdminNav from './AdminNav'; // <-- NEW
-import ManagerDashboard from './ManagerDashboard'; // <-- NEW
-import AgentDashboard from './AgentDashboard'; // <-- NEW
+import AdminNav from './AdminNav';
 
 function AdminDashboard({ user, onLogout }) {
   // State to control which dashboard view the Admin is looking at
   const [currentView, setCurrentView] = useState('Admin'); 
 
-  // --- EXISTING USER MANAGEMENT LOGIC ---
+  // --- User Management State ---
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Agent' });
   const [alertState, setAlertState] = useState({ type: '', message: '' });
 
+  // Function to fetch all users from Firestore
   const fetchUsers = async () => {
     const usersCollection = await getDocs(collection(db, "users"));
     setUsers(usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -32,19 +31,23 @@ function AdminDashboard({ user, onLogout }) {
     setNewUser({ ...newUser, [e.target.name]: e.target.value });
   };
 
+  // --- Core Logic: Add New User ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
 
     try {
+      // 1. Create the new user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
       
+      // 2. Create the user document in Firestore to store their role
       await setDoc(doc(db, "users", userCredential.user.uid), {
         fullName: newUser.fullName,
         role: newUser.role,
         email: newUser.email,
       });
 
+      // 3. IMPORTANT: Sign the new user out immediately (required for Spark Plan)
       await auth.signOut();
       
       setAlertState({ 
@@ -60,14 +63,30 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
   
+  // --- Core Logic: Send Password Reset Email ---
+  const handlePasswordReset = async () => {
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setAlertState({ 
+          type: 'info', 
+          message: `A password reset link has been sent to your email: ${user.email}. Check your inbox.` 
+      });
+    } catch (error) {
+      setAlertState({ 
+          type: 'error', 
+          message: 'Could not send reset email. Ensure you are online and try again.' 
+      });
+    }
+  };
+
   // --- FUNCTION TO RENDER THE SELECTED VIEW ---
   const renderDashboardView = () => {
     if (currentView === 'Manager') {
-        // Pass the Admin's user object to simulate a manager session if needed, or simply render the Manager view.
+        // Renders a simulated Manager View
         return <ManagerDashboard user={{ fullName: "Admin (Manager View)", role: "Manager" }} onLogout={onLogout} />;
     }
     if (currentView === 'Agent') {
-        // Render a generic Agent View
+        // Renders a simulated Agent View
         return <AgentDashboard user={{ fullName: "Admin (Agent View)", role: "Agent" }} onLogout={onLogout} />;
     }
 
@@ -78,7 +97,7 @@ function AdminDashboard({ user, onLogout }) {
             elevation={3} 
             sx={{ padding: 4, mt: 3, mb: 4, backgroundColor: 'background.paper' }}
         >
-            <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>User Management</Typography>
+            <Typography variant="h5" gutterBottom sx={{ color: 'primary.dark', fontWeight: 'bold' }}>User Management Tools</Typography>
             
             {/* --- Alert Messages --- */}
             {alertState.message && (
@@ -90,7 +109,6 @@ function AdminDashboard({ user, onLogout }) {
             {/* --- ADD NEW USER SECTION --- */}
             <Box sx={{ my: 4, p: 3, border: '1px solid #e0e0e0', borderRadius: 1 }}>
                 <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
-                {/* ... (Your existing Add User Form JSX) ... */}
                 <form onSubmit={handleAddUser}>
                     <Grid container spacing={2} alignItems="center">
                         <Grid item xs={12} sm={3}>
@@ -149,9 +167,18 @@ function AdminDashboard({ user, onLogout }) {
     <Container maxWidth="lg" sx={{ pt: 2, pb: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4" sx={{ color: 'primary.main', fontWeight: 'bold' }}>ELEVATEPLUS Admin</Typography>
-        <Box>
-            <Typography variant="body1" sx={{ mr: 2, display: 'inline' }}>Logged in as: {user.fullName}</Typography>
-            <Button variant="contained" color="secondary" onClick={onLogout}>Logout</Button>
+        
+        {/* --- Header Buttons --- */}
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Typography variant="body1" sx={{ mr: 2, display: 'inline' }}>Logged in as: {user.fullName}</Typography>
+          
+          <Button variant="outlined" color="primary" onClick={handlePasswordReset}>
+              Change Password
+          </Button>
+          
+          <Button variant="contained" color="secondary" onClick={onLogout}>
+              Logout
+          </Button>
         </Box>
       </Box>
       

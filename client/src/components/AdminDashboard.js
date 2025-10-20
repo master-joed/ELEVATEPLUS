@@ -1,8 +1,11 @@
 // client/src/components/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-// Added addDoc and updateDoc for campaign/KPI functionality
-import { collection, getDocs, setDoc, doc, query, where, addDoc, updateDoc } from "firebase/firestore"; 
+// --- FINAL FIX: Ensure ALL required Firestore functions are imported ---
+import { 
+    collection, getDocs, setDoc, doc, query, where, updateDoc, 
+    arrayUnion, arrayRemove, addDoc 
+} from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
 
 import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Box, Alert, Tabs, Tab, Switch, FormControl, InputLabel } from '@mui/material';
@@ -184,7 +187,7 @@ function AdminDashboard({ user, onLogout }) {
       }
   };
 
-
+  
   // --- CORE LOGIC: USER ACTIONS ---
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -487,7 +490,7 @@ function AdminDashboard({ user, onLogout }) {
         </Container>
     );
 };
-
+  
   const renderUserManagement = () => {
     // ... (User Management logic remains the same)
     return (

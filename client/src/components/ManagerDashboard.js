@@ -34,12 +34,16 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
             setManagedCampaigns(managed);
             setCampaigns(campaignList); 
 
-            // Set default campaign selection
+            // Set default campaign selection (or use the campaign passed to the function)
             const campaignToLoad = managed.find(c => c.id === currentCampaignId) || managed[0];
             
+            let agentList = [];
             if (campaignToLoad) {
-                setSelectedCampaign(campaignToLoad);
-                
+                // FIX: Update the selected campaign state here to ensure the latest campaign is always selected.
+                if (selectedCampaign?.id !== campaignToLoad.id) {
+                     setSelectedCampaign(campaignToLoad);
+                }
+
                 // 2. Fetch Campaign-KPI links
                 const campaignKpisSnapshot = await getDocs(collection(db, "campaignKpis"));
                 const links = {};
@@ -51,18 +55,15 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                 setCampaignKpis(links);
 
                 // 3. Fetch Agents (Admins/Agents) assigned to the selected campaign
-                let agentList = [];
                 if (!isSimulated) {
-                    
                     const usersQuery = query(collection(db, 'users'), where('campaignId', '==', campaignToLoad.id));
                     const snapshot = await getDocs(usersQuery);
 
-                    // Filter users belonging to the campaign AND assigned to this manager's UID
                     agentList = snapshot.docs
                         .map(doc => ({ id: doc.id, uid: doc.id, ...doc.data(), overallScore: 'N/A' }))
                         .filter(u => 
                             (u.role === 'Agent' || u.role === 'Admin') && 
-                            u.managerId === managerUID // CRUCIAL FILTER
+                            u.managerId === managerUID
                         );
                     setAgents(agentList);
                 }
@@ -78,26 +79,22 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
         }
     }, [isSimulated, user.uid, user.role, selectedCampaign]); 
 
-    // Initial fetch on component mount
+    // Initial fetch on component mount and when user changes
     useEffect(() => {
         if (user && user.uid && (user.role === 'Manager' || user.role === 'Super Admin')) { 
-            fetchAllManagerData(selectedCampaign?.id);
+            // FIX: Only call with a campaign ID if one is already selected, preventing initial state loop
+            fetchAllManagerData(selectedCampaign?.id); 
         } else if (isSimulated) {
             setIsLoading(false);
             setAgents([]);
         }
-    }, [user, isSimulated]);
+    }, [user, isSimulated]); // Removed fetchAllManagerData and selectedCampaign from deps array
 
-    // Refetch when selectedCampaign changes
-    useEffect(() => {
-        if (selectedCampaign) {
-            fetchAllManagerData(selectedCampaign.id);
-        }
-    }, [selectedCampaign]);
-
+    // Handler for campaign dropdown change
     const handleCampaignChange = (campaignId) => {
         const campaign = campaigns.find(c => c.id === campaignId);
-        setSelectedCampaign(campaign);
+        // FIX: Rerun the entire fetch process with the new campaign ID
+        fetchAllManagerData(campaignId); 
     };
 
     // --- RENDER CONTENT ---
@@ -115,7 +112,7 @@ function ManagerDashboard({ user, onLogout, isSimulated }) {
                 <AgentScoreForm 
                     agent={selectedAgent} 
                     campaignKpis={campaignKpis} 
-                    fetchTeamData={fetchAllManagerData} 
+                    fetchTeamData={() => fetchAllManagerData(selectedCampaign?.id)} // Rerun fetch on submit
                 />
             </Container>
         );

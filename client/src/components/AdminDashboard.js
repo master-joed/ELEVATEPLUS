@@ -1,5 +1,5 @@
 // client/src/components/AdminDashboard.js
-import React, { useState, useEffect } from 'react'; // <-- Ensure useState and useEffect are here
+import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, getDocs, setDoc, doc, query, where } from "firebase/firestore"; 
 import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; 
@@ -8,7 +8,6 @@ import { Container, Typography, Grid, TextField, Select, MenuItem, Button, Table
 import ManagerDashboard from './ManagerDashboard';
 import AgentDashboard from './AgentDashboard';
 
-// --- THE FIX: Ensure correct function definition syntax ---
 function AdminDashboard({ user, onLogout }) {
   const [currentView, setCurrentView] = useState('Admin'); 
   const [users, setUsers] = useState([]);
@@ -19,19 +18,19 @@ function AdminDashboard({ user, onLogout }) {
   const [editingUser, setEditingUser] = useState(null); 
   const [isModalOpen, setIsModalOpen] = useState(false); 
   
-  // --- Campaign/KPI States (Placeholder) ---
+  // Placeholder for Campaign/KPI States
   const [campaigns] = useState([]); 
   const [allKpis] = useState([]); 
   const [selectedCampaignId] = useState('');
 
-  // Function to fetch all users and managers (Super Admin, Admin, Manager)
+  // Function to fetch all users and assignable managers (Super Admin or Manager)
   const fetchUsers = async () => {
     const usersCollection = await getDocs(collection(db, "users"));
     const allUsers = usersCollection.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setUsers(allUsers);
     
-    // Filter for potential Managers (Super Admin, Admin, or Manager roles)
-    const managerList = allUsers.filter(u => u.role === 'Manager' || u.role === 'Admin' || u.role === 'Super Admin');
+    // --- FIX: Restrict Manager List to ONLY Super Admin and Manager Roles ---
+    const managerList = allUsers.filter(u => u.role === 'Manager' || u.role === 'Super Admin');
     setManagers(managerList.map(u => ({ id: u.id, fullName: u.fullName, role: u.role })));
   };
 
@@ -39,18 +38,24 @@ function AdminDashboard({ user, onLogout }) {
     fetchUsers();
   }, []);
 
+  // Helper function to check if the role requires a manager assignment
+  const requiresManager = (role) => role === 'Agent' || role === 'Admin'; 
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     
+    // Logic for new user creation form
     if (name === 'managerId') {
       setNewUser(prev => ({ 
         ...prev, 
-        role: 'Agent',
-        [name]: value 
+        [name]: value,
+        // Ensure role is set to Admin/Agent if managerId is selected
+        role: prev.role === 'Admin' ? 'Admin' : 'Agent', 
       }));
     } else if (name === 'role') {
         const updates = { [name]: value };
-        if (value !== 'Agent') {
+        // If the role doesn't require a manager, clear managerId
+        if (!requiresManager(value)) {
             updates.managerId = '';
         }
         setNewUser(prev => ({ ...prev, ...updates }));
@@ -59,12 +64,14 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  // --- Core Logic: Add New User ---
   const handleAddUser = async (e) => {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
 
-    if (newUser.role === 'Agent' && !newUser.managerId) {
-        setAlertState({ type: 'error', message: 'Please select a manager for the new agent.' });
+    // --- FIX: Enforce Manager Assignment for Admin and Agent Roles ---
+    if (requiresManager(newUser.role) && !newUser.managerId) {
+        setAlertState({ type: 'error', message: `Please select a manager for the ${newUser.role} role.` });
         return;
     }
     
@@ -75,7 +82,8 @@ function AdminDashboard({ user, onLogout }) {
         fullName: newUser.fullName,
         role: newUser.role,
         email: newUser.email,
-        ...(newUser.role === 'Agent' && newUser.managerId && { managerId: newUser.managerId }),
+        // Conditionally include managerId
+        ...(requiresManager(newUser.role) && newUser.managerId && { managerId: newUser.managerId }),
       };
       
       await setDoc(doc(db, "users", userCredential.user.uid), userData); 
@@ -110,6 +118,7 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
   
+  // --- Core Logic: Edit User Functions ---
   const handleOpenEdit = (userToEdit) => {
     setEditingUser({
       id: userToEdit.id,
@@ -126,7 +135,8 @@ function AdminDashboard({ user, onLogout }) {
     setEditingUser(prev => ({ 
         ...prev, 
         [name]: value,
-        ...(name === 'role' && value !== 'Agent' && { managerId: '' }) 
+        // If the new role doesn't require a manager, clear the managerId field
+        ...(name === 'role' && !requiresManager(value) && { managerId: '' }) 
     }));
   };
   
@@ -134,16 +144,18 @@ function AdminDashboard({ user, onLogout }) {
     e.preventDefault();
     setAlertState({ type: '', message: '' });
 
-    if (editingUser.role === 'Agent' && !editingUser.managerId) {
-      setAlertState({ type: 'error', message: 'Please select a manager for the agent.' });
+    // --- FIX: Enforce Manager Assignment for Admin and Agent Roles in Edit Modal ---
+    if (requiresManager(editingUser.role) && !editingUser.managerId) {
+      setAlertState({ type: 'error', message: `Please select a manager for the ${editingUser.role} role.` });
       return;
     }
 
     try {
       const updates = {
         role: editingUser.role,
-        ...(editingUser.role === 'Agent' && editingUser.managerId && { managerId: editingUser.managerId }),
-        ...(editingUser.role !== 'Agent' && { managerId: null }), 
+        // Conditionally include or remove managerId based on the role
+        ...(requiresManager(editingUser.role) && editingUser.managerId && { managerId: editingUser.managerId }),
+        ...(!requiresManager(editingUser.role) && { managerId: null }), 
       };
 
       const userRef = doc(db, 'users', editingUser.id);
@@ -193,7 +205,7 @@ function AdminDashboard({ user, onLogout }) {
             <Typography variant="h6" gutterBottom sx={{ color: 'secondary.dark' }}>Add New User</Typography>
             
             <Alert severity="info" sx={{ mb: 2 }}>
-                Super Admins, Admins, and Managers are eligible to manage agents and appear in the dropdown list.
+                Only Super Admins and Managers are assignable to Agents and Admins.
             </Alert>
 
             <form onSubmit={handleAddUser}>
@@ -216,12 +228,12 @@ function AdminDashboard({ user, onLogout }) {
                         </TextField>
                     </Grid>
                     
-                    {/* Manager Assignment Dropdown */}
-                    {newUser.role === 'Agent' && (
+                    {/* Manager Assignment Dropdown (Visible for Admin and Agent) */}
+                    {(newUser.role === 'Agent' || newUser.role === 'Admin') && (
                         <Grid item xs={12} sm={3}>
                             <TextField
                                 select
-                                label="Select Manager"
+                                label={`Select Manager for ${newUser.role}`}
                                 name="managerId"
                                 value={newUser.managerId || ''}
                                 onChange={handleInputChange}
@@ -238,7 +250,7 @@ function AdminDashboard({ user, onLogout }) {
                             </TextField>
                         </Grid>
                     )}
-                    <Grid item xs={12} sm={newUser.role === 'Agent' ? 1 : 2}> 
+                    <Grid item xs={12} sm={requiresManager(newUser.role) ? 1 : 2}> 
                         <Button type="submit" variant="contained" color="primary" fullWidth sx={{height: '56px'}}>Add</Button>
                     </Grid>
                 </Grid>
@@ -255,22 +267,29 @@ function AdminDashboard({ user, onLogout }) {
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Full Name</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Role</TableCell>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Manager</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {users.map((u) => (
-                            <TableRow key={u.id} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#f9f9f9' } }}>
-                                <TableCell component="th" scope="row">{u.fullName}</TableCell>
-                                <TableCell>{u.email}</TableCell>
-                                <TableCell>{u.role}</TableCell>
-                                <TableCell>
-                                    <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)}>
-                                        Edit
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                        {users.map((u) => {
+                            const manager = u.managerId ? managers.find(m => m.id === u.managerId) : null;
+                            const managerName = manager ? `${manager.fullName} (${manager.role})` : 'N/A';
+                            
+                            return (
+                                <TableRow key={u.id} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#f9f9f9' } }}>
+                                    <TableCell component="th" scope="row">{u.fullName}</TableCell>
+                                    <TableCell>{u.email}</TableCell>
+                                    <TableCell>{u.role}</TableCell>
+                                    <TableCell>{managerName}</TableCell> {/* NEW: Display Manager */}
+                                    <TableCell>
+                                        <Button variant="outlined" size="small" onClick={() => handleOpenEdit(u)}>
+                                            Edit
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
                     </TableBody>
                 </Table>
             </TableContainer>
@@ -366,11 +385,11 @@ function AdminDashboard({ user, onLogout }) {
                           </Grid>
                           
                           {/* 3. MANAGER ASSIGNMENT DROPDOWN (Conditional) */}
-                          {editingUser.role === 'Agent' && (
+                          {(editingUser.role === 'Agent' || editingUser.role === 'Admin') && (
                               <Grid item xs={12}>
                                   <TextField
                                       select
-                                      label="Assign Manager"
+                                      label={`Assign Manager for ${editingUser.role}`}
                                       name="managerId"
                                       value={editingUser.managerId || ''}
                                       onChange={handleEditChange}

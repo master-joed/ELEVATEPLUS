@@ -3,7 +3,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-require('dotenv').config(); // Load environment variables
+require('dotenv').config();
 
 const app = express();
 
@@ -28,6 +28,7 @@ async function getGoogleSheetsClient() {
 
 // Register a new user
 app.post('/api/register', async (req, res) => {
+    // ... (The code for this endpoint is correct and remains the same)
     const { username, fullName, role, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ message: 'Username and password are required.' });
@@ -51,6 +52,7 @@ app.post('/api/register', async (req, res) => {
   
 // Log in a user
 app.post('/api/login', async (req, res) => {
+    // ... (The code for this endpoint is correct and remains the same)
   const { username, password } = req.body;
   try {
     const sheets = await getGoogleSheetsClient();
@@ -76,6 +78,6 @@ app.post('/api/login', async (req, res) => {
   } catch (error) { res.status(500).send('Server Error'); }
 });
 
-// Start the server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 ELEVATEPLUS server running on port ${PORT}`));
+// --- THIS IS THE IMPORTANT CHANGE ---
+// We remove the app.listen() and export the app instead for Vercel
+module.exports = app;

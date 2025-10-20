@@ -1,8 +1,13 @@
 // src/components/AgentScoreForm.js
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { Typography, Box, Grid, TextField, Button, Paper, Alert } from '@mui/material';
+// --- CORRECTED MUI IMPORTS: All table components are now included ---
+import { 
+    Typography, Box, Grid, TextField, Button, Paper, Alert, 
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow 
+} from '@mui/material';
+// -------------------------------------------------------------------
 
 function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [kpiScores, setKpiScores] = useState({});
@@ -122,7 +127,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             // 3. Success and cleanup
             setAlert({ type: 'success', message: `Scores and Coaching Log saved successfully! Overall Score: ${overallScore}` });
             setActionPlan('');
-            // Optional: Call a function to refresh the team roster
+            // Call a function to refresh the team roster
             fetchTeamData(); 
 
         } catch (error) {

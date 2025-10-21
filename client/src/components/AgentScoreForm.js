@@ -14,12 +14,13 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [actionPlan, setActionPlan] = useState('');
     const [alert, setAlert] = useState(null);
 
-    // --- FIX: Robustly filter KPIs that are ENABLED for the agent's campaign ---
-    // This is the direct lookup into the cached campaignKpis object
-    const enabledKpis = Object.entries(campaignKpis[agent.campaignId] || {})
+    const campaignId = agent.campaignId;
+
+    // Filter KPIs that are ENABLED for the agent's campaign
+    // This looks up the campaignKpis state passed from the Manager Dashboard
+    const enabledKpis = Object.entries(campaignKpis[campaignId] || {})
         .filter(([, data]) => data && data.isEnabled === true)
         .map(([kpiId]) => ({ id: kpiId }));
-    // ------------------------------------------------------------------------
 
     const [kpiDetails, setKpiDetails] = useState([]);
     const [overallScore, setOverallScore] = useState(null);
@@ -34,21 +35,24 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                 return;
             }
             try {
-                const q = query(collection(db, 'kpis'), where('id', 'in', kpiIds));
+                // Query master kpis collection where the document ID is equal to one of the kpiIds
+                // Note: Firestore's 'where('id', 'in', ...)' queries the Document ID itself implicitly
+                const q = query(collection(db, 'kpis'), where('id', 'in', kpiIds)); 
                 const snapshot = await getDocs(q);
-                const details = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Ensure doc ID is included in data for mapping, but also rely on the correct query syntax
+                const details = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
                 setKpiDetails(details);
             } catch (error) {
                 console.error("Error fetching KPI details:", error);
             }
         };
-        // Dependency on the length of enabledKpis ensures this runs only when the enabled list changes
         fetchKpiDetails();
-    }, [agent.campaignId, enabledKpis.length]); 
+        // Dependency array: only re-run when the enabled list changes
+    }, [campaignId, enabledKpis.length]); 
+    // ... (rest of the file remains the same)
 
     // Calculate Overall Score (1-5) based on inputs
     useEffect(() => {
-        // ... (Calculation logic remains the same)
         const calculateScore = () => {
             let totalWeightedScore = 0;
             let totalWeight = 0;
@@ -87,7 +91,6 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     }, [kpiScores, targets, weights, kpiDetails]);
 
     const handleScoreSubmit = async (e) => {
-        // ... (Submission logic remains the same)
         e.preventDefault();
         setAlert(null);
 
@@ -106,7 +109,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                 date: new Date(),
                 actionPlan: actionPlan || 'No formal action plan recorded.',
                 overallRating: parseFloat(overallScore),
-                campaignId: agent.campaignId,
+                campaignId: campaignId,
             });
             
             // 2. Add KPI Scores
@@ -119,7 +122,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                         target: parseFloat(targets[kpi.name] || 0),
                         weight: parseFloat(weights[kpi.name] || 0),
                         date: new Date(),
-                        campaignId: agent.campaignId,
+                        campaignId: campaignId,
                     });
                 }
             });
@@ -142,10 +145,9 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             
             {alert && <Alert severity={alert.type} sx={{ mb: 2 }}>{alert.message}</Alert>}
 
-            {/* --- Render the form only if KPIs are found --- */}
             {kpiDetails.length === 0 ? (
                 <Alert severity="warning">
-                    No KPIs are currently **Enabled** for the **{agent.campaignId}** campaign. Please contact an Admin and ensure KPIs are toggled ON.
+                    No KPIs are currently **Enabled** for this campaign. Please contact an Admin and ensure KPIs are toggled ON.
                 </Alert>
             ) : (
                 <form onSubmit={handleScoreSubmit}>

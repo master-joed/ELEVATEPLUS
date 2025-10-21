@@ -15,8 +15,9 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [alert, setAlert] = useState(null);
 
     // --- FIX: Robustly filter KPIs that are ENABLED for the agent's campaign ---
+    // This is the direct lookup into the cached campaignKpis object
     const enabledKpis = Object.entries(campaignKpis[agent.campaignId] || {})
-        .filter(([, data]) => data && data.isEnabled === true) // Ensure isEnabled is explicitly boolean true
+        .filter(([, data]) => data && data.isEnabled === true)
         .map(([kpiId]) => ({ id: kpiId }));
     // ------------------------------------------------------------------------
 
@@ -27,12 +28,12 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     useEffect(() => {
         const fetchKpiDetails = async () => {
             const kpiIds = enabledKpis.map(k => k.id);
+            // CRITICAL CHECK: Only run query if there are enabled KPIs
             if (kpiIds.length === 0) {
                 setKpiDetails([]);
                 return;
             }
             try {
-                // We must split the query if there are more than 10 KPIs, but for now, a single query is fine.
                 const q = query(collection(db, 'kpis'), where('id', 'in', kpiIds));
                 const snapshot = await getDocs(q);
                 const details = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -41,11 +42,13 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                 console.error("Error fetching KPI details:", error);
             }
         };
+        // Dependency on the length of enabledKpis ensures this runs only when the enabled list changes
         fetchKpiDetails();
-    }, [agent.campaignId, enabledKpis.length]); // Dependency on the length of enabledKpis
+    }, [agent.campaignId, enabledKpis.length]); 
 
     // Calculate Overall Score (1-5) based on inputs
     useEffect(() => {
+        // ... (Calculation logic remains the same)
         const calculateScore = () => {
             let totalWeightedScore = 0;
             let totalWeight = 0;
@@ -84,6 +87,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     }, [kpiScores, targets, weights, kpiDetails]);
 
     const handleScoreSubmit = async (e) => {
+        // ... (Submission logic remains the same)
         e.preventDefault();
         setAlert(null);
 
@@ -98,7 +102,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             await addDoc(collection(db, 'coachingLogs'), {
                 agentId: agent.id,
                 coachId: auth.currentUser.uid,
-                coachName: auth.currentUser.displayName || auth.currentUser.email, // Use email if name is null
+                coachName: auth.currentUser.displayName || auth.currentUser.email,
                 date: new Date(),
                 actionPlan: actionPlan || 'No formal action plan recorded.',
                 overallRating: parseFloat(overallScore),
@@ -138,6 +142,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             
             {alert && <Alert severity={alert.type} sx={{ mb: 2 }}>{alert.message}</Alert>}
 
+            {/* --- Render the form only if KPIs are found --- */}
             {kpiDetails.length === 0 ? (
                 <Alert severity="warning">
                     No KPIs are currently **Enabled** for the **{agent.campaignId}** campaign. Please contact an Admin and ensure KPIs are toggled ON.

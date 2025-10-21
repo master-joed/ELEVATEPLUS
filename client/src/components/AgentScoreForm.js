@@ -2,12 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-// --- All necessary MUI components are imported here ---
 import { 
     Typography, Box, Grid, TextField, Button, Paper, Alert, 
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow 
 } from '@mui/material';
-// -----------------------------------------------------------
 
 function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [kpiScores, setKpiScores] = useState({});
@@ -16,28 +14,25 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
     const [actionPlan, setActionPlan] = useState('');
     const [alert, setAlert] = useState(null);
 
-    // Filter KPIs that are ENABLED for the agent's campaign
+    // --- FIX: Robustly filter KPIs that are ENABLED for the agent's campaign ---
     const enabledKpis = Object.entries(campaignKpis[agent.campaignId] || {})
-        .filter(([, data]) => data.isEnabled)
+        .filter(([, data]) => data && data.isEnabled === true) // Ensure isEnabled is explicitly boolean true
         .map(([kpiId]) => ({ id: kpiId }));
+    // ------------------------------------------------------------------------
 
-    // Fetch details for the enabled KPIs (Name, Type)
     const [kpiDetails, setKpiDetails] = useState([]);
     const [overallScore, setOverallScore] = useState(null);
 
     // Fetch the detailed KPI names and types from the master list
     useEffect(() => {
         const fetchKpiDetails = async () => {
-            if (enabledKpis.length === 0) {
+            const kpiIds = enabledKpis.map(k => k.id);
+            if (kpiIds.length === 0) {
                 setKpiDetails([]);
                 return;
             }
             try {
-                // Fetch the master list of KPIs
-                const kpiIds = enabledKpis.map(k => k.id);
-                // Firestore limit: cannot use 'in' query with an empty array
-                if (kpiIds.length === 0) return; 
-
+                // We must split the query if there are more than 10 KPIs, but for now, a single query is fine.
                 const q = query(collection(db, 'kpis'), where('id', 'in', kpiIds));
                 const snapshot = await getDocs(q);
                 const details = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -47,7 +42,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             }
         };
         fetchKpiDetails();
-    }, [agent.campaignId]);
+    }, [agent.campaignId, enabledKpis.length]); // Dependency on the length of enabledKpis
 
     // Calculate Overall Score (1-5) based on inputs
     useEffect(() => {
@@ -63,14 +58,12 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                 if (weight > 0) {
                     let normalizedScore = 0;
                     
-                    // Simple normalization logic: Score / Target
                     if (kpi.type === 'Percentage' || kpi.type === 'Currency') {
                         normalizedScore = target > 0 ? (score / target) : 0;
                     } else if (kpi.type === 'Rating (1-5)') {
-                        normalizedScore = score / 5; // Normalize rating to 0-1 scale
+                        normalizedScore = score / 5; 
                     }
                     
-                    // Cap normalized score at 1.2 for over-performance
                     normalizedScore = Math.min(normalizedScore, 1.2); 
 
                     totalWeightedScore += normalizedScore * weight;
@@ -79,9 +72,8 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             });
 
             if (totalWeight > 0) {
-                // Calculate average weighted score (0 to 1.2 scale) and convert to 1-5 rating
                 const weightedAverage = totalWeightedScore / totalWeight;
-                const finalRating = Math.min(5, Math.max(1, weightedAverage * 4 + 1)); // Scale from 1 to 5
+                const finalRating = Math.min(5, Math.max(1, weightedAverage * 4 + 1)); 
                 setOverallScore(finalRating.toFixed(2));
             } else {
                 setOverallScore(null);
@@ -95,7 +87,6 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
         e.preventDefault();
         setAlert(null);
 
-        // Basic validation for weights
         const totalWeightCheck = kpiDetails.reduce((sum, kpi) => sum + parseFloat(weights[kpi.name] || 0), 0);
         if (totalWeightCheck === 0) {
             setAlert({ type: 'error', message: 'Please set weight for at least one KPI.' });
@@ -107,7 +98,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
             await addDoc(collection(db, 'coachingLogs'), {
                 agentId: agent.id,
                 coachId: auth.currentUser.uid,
-                coachName: auth.currentUser.displayName || 'Manager',
+                coachName: auth.currentUser.displayName || auth.currentUser.email, // Use email if name is null
                 date: new Date(),
                 actionPlan: actionPlan || 'No formal action plan recorded.',
                 overallRating: parseFloat(overallScore),
@@ -129,10 +120,8 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
                 }
             });
 
-            // 3. Success and cleanup
             setAlert({ type: 'success', message: `Scores and Coaching Log saved successfully! Overall Score: ${overallScore}` });
             setActionPlan('');
-            // Optional: Call a function to refresh the team roster
             if (fetchTeamData) {
                 fetchTeamData();
             }
@@ -151,7 +140,7 @@ function AgentScoreForm({ agent, campaignKpis, fetchTeamData }) {
 
             {kpiDetails.length === 0 ? (
                 <Alert severity="warning">
-                    No KPIs are currently **Enabled** for the **{agent.campaignId}** campaign. Please contact an Admin.
+                    No KPIs are currently **Enabled** for the **{agent.campaignId}** campaign. Please contact an Admin and ensure KPIs are toggled ON.
                 </Alert>
             ) : (
                 <form onSubmit={handleScoreSubmit}>
